@@ -120,11 +120,11 @@ except Exception:
                 nilai_kontrak_val = 0 if pd.isna(row['Nilai Kontrak']) else float(row['Nilai Kontrak'])
                 
                 cursor.execute("""
-                    UPDATE laporan_mingguan 
-                    SET jenis_pekerjaan = ?, no_spk = ?, kontraktor = ?, unit = ?, nilai_kontrak = ?,
-                        progress_minggu_lalu = ?, progress_minggu_ini = ?, 
-                        selisih_progress = ?, catatan = ?
-                    WHERE id = ?
+                    cursor.execute("""
+    UPDATE laporan_mingguan
+    SET progress = ?
+    WHERE id = ?
+""")
                 """, (
                     jenis_pekerjaan_val,
                     no_spk_val,
