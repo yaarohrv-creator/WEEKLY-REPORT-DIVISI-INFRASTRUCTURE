@@ -18,18 +18,30 @@ def get_connection():
     conn = sqlite3.connect('proyek.db')
     cursor = conn.cursor()
 
-    # 1. Tabel Master SPK (Mendukung Multi-Jenis Pekerjaan per SPK)
+    # 1. Tabel Master SPK (Lengkap dengan Jumlah & Nilai Kontrak Pekerjaan)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS master_spk (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             no_spk TEXT,
-            jenis_pekerjaan TEXT,
             kontraktor TEXT,
+            jenis_pekerjaan TEXT,
             unit TEXT,
-            nilai_kontrak REAL,
+            jumlah INTEGER DEFAULT 1,
+            nilai_pekerjaan REAL,
             UNIQUE(no_spk, jenis_pekerjaan)
         )
     ''')
+
+    # Migration: pastikan kolom jumlah tersedia jika DB lama dipakai
+    try:
+        cursor.execute("ALTER TABLE master_spk ADD COLUMN jumlah INTEGER DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE master_spk ADD COLUMN nilai_pekerjaan REAL")
+    except sqlite3.OperationalError:
+        pass
 
     # 2. Tabel Laporan Progress Mingguan
     cursor.execute('''
@@ -40,7 +52,8 @@ def get_connection():
             jenis_pekerjaan TEXT,
             kontraktor TEXT,
             unit TEXT,
-            nilai_kontrak REAL,
+            jumlah INTEGER,
+            nilai_pekerjaan REAL,
             progress_minggu_lalu REAL,
             progress_minggu_ini REAL,
             catatan TEXT
@@ -85,10 +98,11 @@ if menu == "Dashboard Progress":
             id AS real_id,
             waktu_input AS [Waktu Input],
             no_spk AS [Nomor SPK],
-            jenis_pekerjaan AS [Jenis Pekerjaan],
             kontraktor AS [Nama Kontraktor],
+            jenis_pekerjaan AS [Jenis Pekerjaan],
             unit AS [Unit Proyek],
-            nilai_kontrak AS [Nilai Kontrak],
+            jumlah AS [Jumlah],
+            nilai_pekerjaan AS [Nilai Kontrak Pekerjaan Ini (Rp)],
             progress_minggu_lalu AS [Progress Minggu Lalu (%)],
             progress_minggu_ini AS [Progress Minggu Ini (%)],
             (COALESCE(progress_minggu_ini, 0) - COALESCE(progress_minggu_lalu, 0)) AS [Selisih / Varian (%)],
@@ -104,8 +118,8 @@ if menu == "Dashboard Progress":
 
     if df_view.empty:
         df_view = pd.DataFrame(columns=[
-            'No', 'real_id', 'Waktu Input', 'Nomor SPK', 'Jenis Pekerjaan',
-            'Nama Kontraktor', 'Unit Proyek', 'Nilai Kontrak',
+            'No', 'real_id', 'Waktu Input', 'Nomor SPK', 'Nama Kontraktor',
+            'Jenis Pekerjaan', 'Unit Proyek', 'Jumlah', 'Nilai Kontrak Pekerjaan Ini (Rp)',
             'Progress Minggu Lalu (%)', 'Progress Minggu Ini (%)',
             'Selisih / Varian (%)', 'Catatan Pekerjaan'
         ])
@@ -138,20 +152,22 @@ if menu == "Dashboard Progress":
                 cursor.execute("""
                     UPDATE laporan_mingguan
                     SET no_spk = ?,
-                        jenis_pekerjaan = ?,
                         kontraktor = ?,
+                        jenis_pekerjaan = ?,
                         unit = ?,
-                        nilai_kontrak = ?,
+                        jumlah = ?,
+                        nilai_pekerjaan = ?,
                         progress_minggu_lalu = ?,
                         progress_minggu_ini = ?,
                         catatan = ?
                     WHERE id = ?
                 """, (
                     row.get('Nomor SPK'),
-                    row.get('Jenis Pekerjaan'),
                     row.get('Nama Kontraktor'),
+                    row.get('Jenis Pekerjaan'),
                     row.get('Unit Proyek'),
-                    row.get('Nilai Kontrak'),
+                    row.get('Jumlah'),
+                    row.get('Nilai Kontrak Pekerjaan Ini (Rp)'),
                     row.get('Progress Minggu Lalu (%)'),
                     row.get('Progress Minggu Ini (%)'),
                     row.get('Catatan Pekerjaan'),
@@ -210,71 +226,78 @@ if menu == "Dashboard Progress":
         st.error(f"Gagal memproses file Excel: {e}")
 
 # ---------------------------------------------------------
-# MENU 2: KELOLA MASTER SPK (DAFTARKAN BEBERAPA PEKERJAAN PER SPK)
+# MENU 2: KELOLA MASTER SPK (SESUAI DESAIN EXCEL BARU)
 # ---------------------------------------------------------
 elif menu == "Kelola Master SPK":
     st.title("📑 Kelola Master SPK Proyek")
-    st.write("Daftarkan Nomor SPK dan Jenis Pekerjaannya. **Satu Nomor SPK dapat didaftarkan beberapa kali dengan jenis pekerjaan yang berbeda.**")
-
-    # Ambil data SPK yang sudah ada untuk saran penisian otomatis
-    try:
-        existing_spk_df = pd.read_sql_query("SELECT DISTINCT no_spk, kontraktor, unit FROM master_spk", conn)
-        existing_spks = existing_spk_df['no_spk'].tolist()
-    except Exception:
-        existing_spks = []
+    st.write("Daftarkan rincian jenis pekerjaan untuk setiap Nomor SPK.")
 
     with st.form("form_master_spk"):
         c1, c2 = st.columns(2)
         with c1:
-            no_spk = st.text_input("Nomor SPK", placeholder="Contoh: SPK/INFRA/2026/001")
-            jenis_pekerjaan = st.text_input("Jenis Pekerjaan", placeholder="Contoh: Pekerjaan Paving / Drainase / Atap")
-            kontraktor = st.text_input("Nama Kontraktor", placeholder="Contoh: PT Utama Karya")
+            no_spk = st.text_input("Nomor SPK", placeholder="Contoh: 048/PSM2/BPRE/BPSL/JKTO/INF/III/2026")
+            kontraktor = st.text_input("Nama Kontraktor", placeholder="Contoh: CV. Selamat Jaya")
+            jenis_pekerjaan = st.text_input("Jenis Pekerjaan", placeholder="Contoh: Renovasi atap R. G2 No 17 Tahun 1996 - BPRE")
         with c2:
-            unit = st.text_input("Unit Proyek", placeholder="Contoh: Kawasan Industri - Blok C")
-            nilai_kontrak = st.number_input("Nilai Kontrak Pekerjaan Ini (Rp)", min_value=0.0, step=1000000.0, format="%.2f")
+            unit = st.text_input("Unit Proyek", placeholder="Contoh: BPRE")
+            jumlah = st.number_input("Jumlah", min_value=1, step=1, value=1)
+            nilai_pekerjaan = st.number_input("Nilai Kontrak Pekerjaan Ini (Rp)", min_value=0.0, step=1000000.0, format="%.2f")
 
         submit_master = st.form_submit_button("➕ Tambah Ke Master SPK")
 
         if submit_master:
             if not no_spk or not jenis_pekerjaan or not kontraktor:
-                st.warning("Nomor SPK, Jenis Pekerjaan, dan Nama Kontraktor wajib diisi.")
+                st.warning("Nomor SPK, Nama Kontraktor, dan Jenis Pekerjaan wajib diisi.")
             else:
                 try:
                     cursor = conn.cursor()
                     cursor.execute("""
-                        INSERT INTO master_spk (no_spk, jenis_pekerjaan, kontraktor, unit, nilai_kontrak)
-                        VALUES (?, ?, ?, ?, ?)
-                    """, (no_spk, jenis_pekerjaan, kontraktor, unit, nilai_kontrak))
+                        INSERT INTO master_spk (no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_pekerjaan)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_pekerjaan))
                     conn.commit()
-                    st.success(f"✅ Pekerjaan '{jenis_pekerjaan}' untuk SPK '{no_spk}' berhasil ditambahkan!")
+                    st.success(f"✅ Item '{jenis_pekerjaan}' berhasil ditambahkan ke SPK '{no_spk}'!")
                     st.rerun()
                 except sqlite3.IntegrityError:
-                    st.error("⚠️ Kombinasi Nomor SPK dan Jenis Pekerjaan ini sudah ada di database!")
+                    st.error("⚠️ Jenis pekerjaan ini sudah ada di dalam SPK tersebut!")
 
     st.markdown("---")
-    st.subheader("📋 Daftar Master SPK & Jenis Pekerjaan")
+    st.subheader("📋 Tampilan Master SPK Sesuai Format Excel")
+    
     try:
         df_master = pd.read_sql_query("""
             SELECT 
                 no_spk AS [Nomor SPK], 
-                jenis_pekerjaan AS [Jenis Pekerjaan], 
                 kontraktor AS [Nama Kontraktor], 
+                jenis_pekerjaan AS [Jenis Pekerjaan], 
                 unit AS [Unit Proyek], 
-                nilai_kontrak AS [Nilai Kontrak] 
+                jumlah AS [Jumlah],
+                nilai_pekerjaan AS [Nilai Kontrak Pekerjaan Ini (Rp)]
             FROM master_spk 
             ORDER BY no_spk ASC
         """, conn)
-        st.dataframe(df_master, use_container_width=True)
-    except Exception:
+
+        if not df_master.empty:
+            # Hitung Total Nilai Kontrak per SPK
+            spk_totals = df_master.groupby('Nomor SPK')['Nilai Kontrak Pekerjaan Ini (Rp)'].transform('sum')
+            df_master['Total Nilai Kontrak (Rp)'] = spk_totals
+            
+            # Format Tampilan Angka Rupiah
+            st.dataframe(df_master.style.format({
+                'Nilai Kontrak Pekerjaan Ini (Rp)': 'Rp {:,.2f}',
+                'Total Nilai Kontrak (Rp)': 'Rp {:,.2f}'
+            }), use_container_width=True)
+        else:
+            st.info("Belum ada data Master SPK.")
+    except Exception as e:
         st.info("Belum ada data Master SPK.")
 
 # ---------------------------------------------------------
-# MENU 3: INPUT PROGRESS MINGGUAN (DENGAN DROPDOWN JENIS PEKERJAAN)
+# MENU 3: INPUT PROGRESS MINGGUAN
 # ---------------------------------------------------------
 elif menu == "Input Progress Mingguan":
     st.title("📝 Input Progress Mingguan Berdasarkan SPK")
 
-    # 1. Ambil daftar SPK Unik dari Master
     try:
         spk_list = pd.read_sql_query("SELECT DISTINCT no_spk FROM master_spk", conn)['no_spk'].tolist()
     except Exception:
@@ -288,7 +311,6 @@ elif menu == "Input Progress Mingguan":
         with col_spk:
             selected_spk = st.selectbox("Pilih Nomor SPK", spk_list)
 
-        # 2. Ambil daftar Jenis Pekerjaan berdasarkan SPK yang dipilih
         job_list = pd.read_sql_query(
             "SELECT jenis_pekerjaan FROM master_spk WHERE no_spk = ?", 
             conn, 
@@ -298,14 +320,12 @@ elif menu == "Input Progress Mingguan":
         with col_job:
             selected_job = st.selectbox("Pilih Jenis Pekerjaan", job_list)
 
-        # 3. Ambil Detail Master SPK untuk kombinasi SPK + Jenis Pekerjaan yang dipilih
         spk_detail = pd.read_sql_query(
             "SELECT * FROM master_spk WHERE no_spk = ? AND jenis_pekerjaan = ?", 
             conn, 
             params=(selected_spk, selected_job)
         ).iloc[0]
 
-        # 4. Ambil Progress Terakhir dari Laporan Mingguan untuk item ini
         last_progress_query = """
             SELECT progress_minggu_ini 
             FROM laporan_mingguan 
@@ -318,7 +338,7 @@ elif menu == "Input Progress Mingguan":
         if not last_progress_df.empty and pd.notna(last_progress_df.iloc[0]['progress_minggu_ini']):
             default_progress_lalu = float(last_progress_df.iloc[0]['progress_minggu_ini'])
 
-        st.info(f"📌 **Detail Pekerjaan:** {spk_detail['jenis_pekerjaan']} | **Kontraktor:** {spk_detail['kontraktor']} | **Unit:** {spk_detail['unit']}")
+        st.info(f"📌 **Detail:** {spk_detail['kontraktor']} | Unit: **{spk_detail['unit']}** | Jumlah: **{spk_detail['jumlah']}** | Nilai Pekerjaan: **Rp {spk_detail['nilai_pekerjaan']:,.2f}**")
 
         with st.form("form_update_progress_mingguan"):
             col1, col2 = st.columns(2)
@@ -326,7 +346,8 @@ elif menu == "Input Progress Mingguan":
             with col1:
                 st.text_input("Nama Kontraktor", value=spk_detail['kontraktor'], disabled=True)
                 st.text_input("Unit Proyek", value=spk_detail['unit'], disabled=True)
-                st.number_input("Nilai Kontrak (Rp)", value=float(spk_detail['nilai_kontrak']), disabled=True)
+                st.number_input("Jumlah", value=int(spk_detail['jumlah']), disabled=True)
+                st.number_input("Nilai Pekerjaan (Rp)", value=float(spk_detail['nilai_pekerjaan'] or 0.0), disabled=True)
 
             with col2:
                 prog_lalu = st.number_input("Progress Minggu Lalu (%)", value=default_progress_lalu, min_value=0.0, max_value=100.0)
@@ -339,15 +360,16 @@ elif menu == "Input Progress Mingguan":
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO laporan_mingguan (
-                        no_spk, jenis_pekerjaan, kontraktor, unit, nilai_kontrak,
+                        no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_pekerjaan,
                         progress_minggu_lalu, progress_minggu_ini, catatan
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     selected_spk,
-                    selected_job,
                     spk_detail['kontraktor'],
+                    selected_job,
                     spk_detail['unit'],
-                    spk_detail['nilai_kontrak'],
+                    spk_detail['jumlah'],
+                    spk_detail['nilai_pekerjaan'],
                     prog_lalu,
                     prog_ini,
                     catatan
