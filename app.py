@@ -61,7 +61,7 @@ def get_connection():
         )
     ''')
 
-    # 2. PERBAIKAN TABEL LAPORAN_MINGGUAN (Penyebab Utama Error)
+    # 2. PERBAIKAN TABEL LAPORAN_MINGGUAN (Penyebab Error Insert)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS laporan_mingguan (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,24 +81,21 @@ def get_connection():
     cursor.execute("PRAGMA table_info(laporan_mingguan)")
     columns_laporan = [col[1] for col in cursor.fetchall()]
 
-    # Pastikan semua kolom pendukung tersedia di tabel laporan_mingguan
-    if 'jenis_pekerjaan' not in columns_laporan:
-        try:
-            cursor.execute("ALTER TABLE laporan_mingguan ADD COLUMN jenis_pekerjaan TEXT")
-        except sqlite3.OperationalError:
-            pass
+    # Otomatis tambahkan kolom jika belum ada di database lama
+    columns_to_add = {
+        'jenis_pekerjaan': 'TEXT',
+        'jumlah': 'INTEGER DEFAULT 1',
+        'nilai_pekerjaan': 'REAL',
+        'kontraktor': 'TEXT',
+        'unit': 'TEXT'
+    }
 
-    if 'jumlah' not in columns_laporan:
-        try:
-            cursor.execute("ALTER TABLE laporan_mingguan ADD COLUMN jumlah INTEGER DEFAULT 1")
-        except sqlite3.OperationalError:
-            pass
-
-    if 'nilai_pekerjaan' not in columns_laporan:
-        try:
-            cursor.execute("ALTER TABLE laporan_mingguan ADD COLUMN nilai_pekerjaan REAL")
-        except sqlite3.OperationalError:
-            pass
+    for col_name, col_type in columns_to_add.items():
+        if col_name not in columns_laporan:
+            try:
+                cursor.execute(f"ALTER TABLE laporan_mingguan ADD COLUMN {col_name} {col_type}")
+            except sqlite3.OperationalError:
+                pass
 
     # 3. TABEL DOKUMENTASI FOTO
     cursor.execute('''
@@ -409,8 +406,8 @@ elif menu == "Input Progress Mingguan":
                     spk_detail['kontraktor'],
                     selected_job,
                     spk_detail['unit'],
-                    spk_detail['jumlah'],
-                    spk_detail['nilai_pekerjaan'],
+                    int(spk_detail['jumlah']),
+                    float(spk_detail['nilai_pekerjaan']),
                     prog_lalu,
                     prog_ini,
                     catatan
