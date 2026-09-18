@@ -7,13 +7,9 @@ import streamlit as st
 # Modul untuk styling dan export Excel
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+
 # Konfigurasi Halaman Streamlit
 st.set_page_config(page_title="Sistem Progress Proyek", layout="wide")
-
-# Tambahkan baris logo ini di sini:
-st.logo(
-    image="logo.png"       # ganti dengan lokasi file logo kamu
-)
 
 # Folder Penyimpanan Foto
 UPLOAD_DIR = "uploads"
