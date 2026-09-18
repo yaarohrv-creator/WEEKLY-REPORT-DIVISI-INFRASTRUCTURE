@@ -10,11 +10,31 @@ from openpyxl.utils import get_column_letter
 
 # Konfigurasi Halaman Streamlit
 st.set_page_config(page_title="Sistem Progress Proyek", layout="wide")
+# =========================================================
+# SELIPKAN KODE LOGIN DI SINI (MULAI BARIS 13)
+# =========================================================
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
 
-# TAMBAHKAN KODE LOGO DI SINI (Pastikan file logo.png sudah di-upload ke GitHub)
-st.sidebar.image("logo.png", use_container_width=True)
+def check_password():
+    password_benar = st.secrets.get("APP_PASSWORD", "123456")
+    if st.session_state["password_input"] == password_benar:
+        st.session_state["authenticated"] = True
+        del st.session_state["password_input"]
+    else:
+        st.session_state["authenticated"] = False
+        st.error("🔑 Password salah! Silakan coba lagi.")
 
-# Folder Penyimpanan Foto
+if not st.session_state["authenticated"]:
+    st.title("🔒 Akses Terbatas - Laporan Progress Proyek")
+    st.write("Silakan masukkan password tim untuk mengakses aplikasi.")
+    st.text_input("Password Akses:", type="password", key="password_input", on_change=check_password)
+    st.info("💡 Password default: `123456`")
+    st.stop()  # Menghentikan eksekusi kode di bawah jika belum login
+# =========================================================
+
+
+# Baris selanjutnya (Folder Penyimpanan Foto / Kode Asli Anda)
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
