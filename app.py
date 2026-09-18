@@ -12,8 +12,7 @@ st.set_page_config(page_title="Sistem Progress Proyek", layout="wide")
 
 # Tambahkan baris logo ini di sini:
 st.logo(
-    image="path/ke/logo_anda.png",       # ganti dengan lokasi file logo kamu
-    icon_image="path/ke/logo_icon.png"  # (opsional) untuk tampilan saat sidebar disembunyikan
+    image="logo.png"       # ganti dengan lokasi file logo kamu
 )
 
 # Folder Penyimpanan Foto
