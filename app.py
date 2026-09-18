@@ -11,6 +11,11 @@ from openpyxl.utils import get_column_letter
 # Konfigurasi Halaman Streamlit
 st.set_page_config(page_title="Sistem Progress Proyek", layout="wide")
 
+# Folder Penyimpanan Foto
+UPLOAD_DIR = "uploads"
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
+
 # ---------------------------------------------------------
 # FUNGSIONALITAS DATABASE SQLITE (proyek_v2.db)
 # ---------------------------------------------------------
@@ -18,7 +23,7 @@ def init_db():
     conn = sqlite3.connect('proyek_v2.db')
     cursor = conn.cursor()
 
-    # 1. TABEL MASTER_SPK
+    # 1. TABEL MASTER_SPK (Ditambahkan kolom 'foto')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS master_spk (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,11 +33,18 @@ def init_db():
             unit TEXT,
             jumlah INTEGER DEFAULT 1,
             nilai_pekerjaan REAL,
+            foto TEXT,
             UNIQUE(no_spk, jenis_pekerjaan)
         )
     ''')
 
-    # 2. TABEL LAPORAN_MINGGUAN (Status Progress Terkini)
+    # Migrasi Otomatis jika kolom 'foto' belum ada pada database lama
+    cursor.execute("PRAGMA table_info(master_spk)")
+    columns = [column[1] for column in cursor.fetchall()]
+    if 'foto' not in columns:
+        cursor.execute("ALTER TABLE master_spk ADD COLUMN foto TEXT")
+
+    # 2. TABEL LAPORAN_MINGGUAN
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS laporan_mingguan (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,7 +61,7 @@ def init_db():
         )
     ''')
 
-    # 3. TABEL HISTORY_PROGRESS (Log Riwayat Perubahan)
+    # 3. TABEL HISTORY_PROGRESS
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS history_progress (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,16 +77,6 @@ def init_db():
         )
     ''')
 
-    # 4. TABEL DOKUMENTASI FOTO
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS dokumentasi_foto (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tipe_dok TEXT,
-            unit TEXT,
-            nama_file TEXT
-        )
-    ''')
-
     conn.commit()
     return conn
 
@@ -87,8 +89,7 @@ st.sidebar.title("Navigasi")
 menu = st.sidebar.selectbox("Pilih Menu", [
     "Dashboard Progress", 
     "Input Progress Mingguan",
-    "Kelola Master SPK", 
-    "Upload Dokumentasi Foto"
+    "Kelola Master SPK"
 ])
 
 # ---------------------------------------------------------
@@ -99,24 +100,25 @@ if menu == "Dashboard Progress":
 
     tab1, tab2 = st.tabs(["📌 Status Progress Terkini", "📜 Riwayat / History Perubahan Progress"])
 
-    # TAB 1: STATUS PROGRESS TERKINI
     with tab1:
         query_view = """
             SELECT 
-                id AS real_id,
-                waktu_input AS [Waktu Input Terbaru],
-                no_spk AS [Nomor SPK],
-                kontraktor AS [Nama Kontraktor],
-                jenis_pekerjaan AS [Jenis Pekerjaan],
-                unit AS [Unit Proyek],
-                jumlah AS [Jumlah],
-                nilai_pekerjaan AS [Nilai Kontrak Pekerjaan Ini (Rp)],
-                progress_minggu_lalu AS [Progress Minggu Lalu (%)],
-                progress_minggu_ini AS [Progress Minggu Ini (%)],
-                (COALESCE(progress_minggu_ini, 0) - COALESCE(progress_minggu_lalu, 0)) AS [Selisih / Varian (%)],
-                catatan AS [Catatan Pekerjaan Terbaru]
-            FROM laporan_mingguan
-            ORDER BY id ASC
+                l.id AS real_id,
+                l.waktu_input AS [Waktu Input Terbaru],
+                l.no_spk AS [Nomor SPK],
+                l.kontraktor AS [Nama Kontraktor],
+                l.jenis_pekerjaan AS [Jenis Pekerjaan],
+                l.unit AS [Unit Proyek],
+                l.jumlah AS [Jumlah],
+                l.nilai_pekerjaan AS [Nilai Kontrak Pekerjaan Ini (Rp)],
+                l.progress_minggu_lalu AS [Progress Minggu Lalu (%)],
+                l.progress_minggu_ini AS [Progress Minggu Ini (%)],
+                (COALESCE(l.progress_minggu_ini, 0) - COALESCE(l.progress_minggu_lalu, 0)) AS [Selisih / Varian (%)],
+                m.foto AS [Path Foto],
+                l.catatan AS [Catatan Pekerjaan Terbaru]
+            FROM laporan_mingguan l
+            LEFT JOIN master_spk m ON l.no_spk = m.no_spk AND l.jenis_pekerjaan = m.jenis_pekerjaan
+            ORDER BY l.id ASC
         """
 
         try:
@@ -136,7 +138,8 @@ if menu == "Dashboard Progress":
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "real_id": None  # Menyembunyikan real_id agar rapi
+                    "real_id": None,
+                    "Path Foto": st.column_config.ImageColumn("Dokumentasi", help="Foto dokumentasi pekerjaan")
                 },
                 key="editor_dashboard"
             )
@@ -183,57 +186,8 @@ if menu == "Dashboard Progress":
                 st.success("Perubahan data berhasil disimpan!")
                 st.rerun()
 
-            st.markdown("---")
-            st.subheader("📥 Export & Download Laporan")
-
-            def generate_excel():
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df_excel = df_view.drop(columns=['real_id'], errors='ignore')
-                    df_excel.to_excel(writer, index=False, sheet_name='Laporan Progress')
-                    
-                    worksheet = writer.sheets['Laporan Progress']
-                    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
-                    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-                    thin_border = Border(
-                        left=Side(style='thin', color='D9D9D9'), right=Side(style='thin', color='D9D9D9'),
-                        top=Side(style='thin', color='D9D9D9'), bottom=Side(style='thin', color='D9D9D9')
-                    )
-
-                    for col_num in range(1, len(df_excel.columns) + 1):
-                        cell = worksheet.cell(row=1, column=col_num)
-                        cell.fill = header_fill
-                        cell.font = header_font
-                        cell.alignment = Alignment(horizontal="center", vertical="center")
-
-                    for row_idx in range(2, len(df_excel) + 2):
-                        for col_idx in range(1, len(df_excel.columns) + 1):
-                            cell = worksheet.cell(row=row_idx, column=col_idx)
-                            cell.border = thin_border
-                            cell.alignment = Alignment(vertical="center")
-
-                    for col in worksheet.columns:
-                        max_len = max(len(str(cell.value or '')) for cell in col)
-                        col_letter = get_column_letter(col[0].column)
-                        worksheet.column_dimensions[col_letter].width = max(max_len + 3, 12)
-
-                return output.getvalue()
-
-            try:
-                excel_data = generate_excel()
-                st.download_button(
-                    label="📥 Download Laporan Terkini (Excel)",
-                    data=excel_data,
-                    file_name="Laporan_Progress_Proyek.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-            except Exception as e:
-                st.error(f"Gagal memproses file Excel: {e}")
-
-    # TAB 2: RIWAYAT / HISTORY PERUBAHAN PROGRESS
     with tab2:
         st.subheader("📜 Log Riwayat Input Progress Pekerjaan")
-        
         query_history = """
             SELECT 
                 waktu_input AS [Tanggal / Waktu Update],
@@ -259,7 +213,6 @@ if menu == "Dashboard Progress":
             if 'No' not in df_history.columns:
                 df_history.insert(0, 'No', range(1, len(df_history) + 1))
 
-            # Filter Berdasarkan SPK jika dibutuhkan
             filter_spk = st.selectbox("Filter Berdasarkan SPK:", ["Semua SPK"] + df_history["Nomor SPK"].unique().tolist())
             if filter_spk != "Semua SPK":
                 df_history_filtered = df_history[df_history["Nomor SPK"] == filter_spk]
@@ -269,18 +222,19 @@ if menu == "Dashboard Progress":
             st.dataframe(df_history_filtered, use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# MENU 2: KELOLA MASTER SPK
+# MENU 2: KELOLA MASTER SPK (DENGAN FOTO DOKUMENTASI)
 # ---------------------------------------------------------
 elif menu == "Kelola Master SPK":
     st.title("📑 Kelola Master SPK Proyek")
-    st.write("Daftarkan rincian jenis pekerjaan untuk setiap Nomor SPK.")
+    st.write("Daftarkan rincian jenis pekerjaan beserta foto dokumentasi posisi awal untuk setiap Nomor SPK.")
 
-    with st.form("form_master_spk"):
+    with st.form("form_master_spk", clear_on_submit=True):
         c1, c2 = st.columns(2)
         with c1:
             no_spk = st.text_input("Nomor SPK", placeholder="Contoh: 048/PSM2/BPRE/BPSL/JKTO/INF/III/2026")
             kontraktor = st.text_input("Nama Kontraktor", placeholder="Contoh: CV. Selamat Jaya")
             jenis_pekerjaan = st.text_input("Jenis Pekerjaan", placeholder="Contoh: Renovasi atap R. G2 No 18 Tahun 1996 - BPRE")
+            uploaded_file = st.file_uploader("Upload Foto Dokumentasi", type=['jpg', 'jpeg', 'png'])
         with c2:
             unit = st.text_input("Unit Proyek", placeholder="Contoh: BPRE")
             jumlah = st.number_input("Jumlah", min_value=1, step=1, value=1)
@@ -292,12 +246,18 @@ elif menu == "Kelola Master SPK":
             if not no_spk or not jenis_pekerjaan or not kontraktor:
                 st.warning("Nomor SPK, Nama Kontraktor, dan Jenis Pekerjaan wajib diisi.")
             else:
+                file_path = None
+                if uploaded_file is not None:
+                    file_path = os.path.join(UPLOAD_DIR, uploaded_file.name)
+                    with open(file_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+
                 try:
                     cursor = conn.cursor()
                     cursor.execute("""
-                        INSERT INTO master_spk (no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_pekerjaan)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_pekerjaan))
+                        INSERT INTO master_spk (no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_pekerjaan, foto)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_pekerjaan, file_path))
                     conn.commit()
                     st.success(f"✅ Item '{jenis_pekerjaan}' berhasil ditambahkan ke SPK '{no_spk}'!")
                     st.rerun()
@@ -316,7 +276,8 @@ elif menu == "Kelola Master SPK":
                 jenis_pekerjaan AS [Jenis Pekerjaan], 
                 unit AS [Unit Proyek], 
                 jumlah AS [Jumlah],
-                nilai_pekerjaan AS [Nilai Kontrak Pekerjaan Ini (Rp)]
+                nilai_pekerjaan AS [Nilai Kontrak Pekerjaan Ini (Rp)],
+                foto AS [Dokumentasi Foto]
             FROM master_spk 
             ORDER BY id ASC
         """, conn)
@@ -325,7 +286,7 @@ elif menu == "Kelola Master SPK":
 
     if df_master.empty:
         df_master = pd.DataFrame(columns=[
-            'real_id', 'Nomor SPK', 'Nama Kontraktor', 'Jenis Pekerjaan', 'Unit Proyek', 'Jumlah', 'Nilai Kontrak Pekerjaan Ini (Rp)', 'Total Nilai Kontrak (Rp)'
+            'real_id', 'Nomor SPK', 'Nama Kontraktor', 'Jenis Pekerjaan', 'Unit Proyek', 'Jumlah', 'Nilai Kontrak Pekerjaan Ini (Rp)', 'Total Nilai Kontrak (Rp)', 'Dokumentasi Foto'
         ])
     else:
         spk_totals = df_master.groupby('Nomor SPK')['Nilai Kontrak Pekerjaan Ini (Rp)'].transform('sum')
@@ -351,6 +312,10 @@ elif menu == "Kelola Master SPK":
                 "Total Nilai Kontrak (Rp)",
                 format="Rp %d",
                 disabled=True
+            ),
+            "Dokumentasi Foto": st.column_config.ImageColumn(
+                "Dokumentasi Foto", 
+                help="Pratinjau Foto Pekerjaan"
             )
         },
         key="editor_master_spk"
@@ -387,26 +352,13 @@ elif menu == "Kelola Master SPK":
                     row.get('Nilai Kontrak Pekerjaan Ini (Rp)'),
                     real_id
                 ))
-            else:
-                if row.get('Nomor SPK') and row.get('Jenis Pekerjaan'):
-                    cursor.execute("""
-                        INSERT INTO master_spk (no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_pekerjaan)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (
-                        row.get('Nomor SPK'),
-                        row.get('Nama Kontraktor'),
-                        row.get('Jenis Pekerjaan'),
-                        row.get('Unit Proyek'),
-                        row.get('Jumlah', 1),
-                        row.get('Nilai Kontrak Pekerjaan Ini (Rp)', 0.0)
-                    ))
 
         conn.commit()
         st.success("✅ Master SPK berhasil diperbarui!")
         st.rerun()
 
 # ---------------------------------------------------------
-# MENU 3: INPUT PROGRESS MINGGUAN (SIMPAN UPDATE & HISTORY)
+# MENU 3: INPUT PROGRESS MINGGUAN
 # ---------------------------------------------------------
 elif menu == "Input Progress Mingguan":
     st.title("📝 Input Progress Mingguan Berdasarkan SPK")
@@ -462,6 +414,10 @@ elif menu == "Input Progress Mingguan":
         nilai_peks = spk_detail['nilai_pekerjaan'] if pd.notna(spk_detail['nilai_pekerjaan']) else 0.0
         st.info(f"📌 **Detail:** {spk_detail['kontraktor']} | Unit: **{spk_detail['unit']}** | Jumlah: **{spk_detail['jumlah']}** | Nilai Pekerjaan: **Rp {nilai_peks:,.2f}**")
 
+        # Menampilkan foto posisi pekerjaan jika ada
+        if pd.notna(spk_detail.get('foto')) and os.path.exists(str(spk_detail['foto'])):
+            st.image(spk_detail['foto'], caption=f"Dokumentasi Pekerjaan: {selected_job}", width=350)
+
         with st.form("form_update_progress_mingguan"):
             col1, col2 = st.columns(2)
 
@@ -495,8 +451,7 @@ elif menu == "Input Progress Mingguan":
             if submit_progress:
                 cursor = conn.cursor()
                 penambahan = float(prog_ini) - float(prog_lalu)
-                
-                # 1. UPDATE / INSERT DI TABEL STATUS TERKINI (laporan_mingguan)
+
                 if already_exists:
                     cursor.execute("""
                         UPDATE laporan_mingguan
@@ -538,7 +493,6 @@ elif menu == "Input Progress Mingguan":
                         str(catatan)
                     ))
 
-                # 2. SELALU REKAM BARIS BARU KE TABEL HISTORY (history_progress)
                 cursor.execute("""
                     INSERT INTO history_progress (
                         no_spk, jenis_pekerjaan, kontraktor, unit,
@@ -558,34 +512,3 @@ elif menu == "Input Progress Mingguan":
                 conn.commit()
                 st.success(f"✅ Progress & History untuk '{selected_job}' (SPK: {selected_spk}) BERHASIL DISIMPAN!")
                 st.rerun()
-
-# ---------------------------------------------------------
-# MENU 4: UPLOAD DOKUMENTASI FOTO
-# ---------------------------------------------------------
-elif menu == "Upload Dokumentasi Foto":
-    st.title("📷 Upload Dokumentasi Foto Pekerjaan")
-
-    with st.form("form_upload_foto"):
-        tipe_dok = st.text_input("Tipe Dokumentasi (misal: Progress Atap, Pondasi)")
-        unit_proyek = st.text_input("Nama Unit Proyek (Harus sama persis dengan di laporan)")
-        uploaded_files = st.file_uploader("Pilih Foto Dokumentasi", type=['jpg', 'jpeg', 'png'], accept_multiple_files=True)
-        
-        submit_foto = st.form_submit_button("📷 Simpan Semua Foto")
-
-        if submit_foto:
-            if not unit_proyek or not uploaded_files:
-                st.warning("Mohon isi Nama Unit Proyek dan unggah minimal satu foto.")
-            else:
-                cursor = conn.cursor()
-                for file in uploaded_files:
-                    file_path = os.path.join(".", file.name)
-                    with open(file_path, "wb") as f:
-                        f.write(file.getbuffer())
-
-                    cursor.execute("""
-                        INSERT INTO dokumentasi_foto (tipe_dok, unit, nama_file)
-                        VALUES (?, ?, ?)
-                    """, (tipe_dok, unit_proyek, file.name))
-
-                conn.commit()
-                st.success("📷 Foto berhasil diunggah dan disimpan ke database!")
