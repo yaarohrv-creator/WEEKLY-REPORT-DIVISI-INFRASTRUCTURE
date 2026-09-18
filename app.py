@@ -29,8 +29,8 @@ if not st.session_state["authenticated"]:
     st.title("🔒 Akses Terbatas - Laporan Progress Proyek")
     st.write("Silakan masukkan password tim untuk mengakses aplikasi.")
     st.text_input("Password Akses:", type="password", key="password_input", on_change=check_password)
-    st.info("💡 Password default: `123456`")
-    st.stop()  # Menghentikan eksekusi kode di bawah jika belum login
+    st.info("💡 Silakan hubungi admin untuk mendapatkan password akses.")
+    st.stop()
 # =========================================================
 
 
