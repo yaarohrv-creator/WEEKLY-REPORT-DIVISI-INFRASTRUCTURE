@@ -55,7 +55,11 @@ conn = get_connection()
 # NAVIGASI SIDEBAR
 # ---------------------------------------------------------
 st.sidebar.title("Navigasi")
-menu = st.sidebar.selectbox("Pilih Menu", ["Dashboard Progress", "Upload Dokumentasi Foto"])
+menu = st.sidebar.selectbox("Pilih Menu", [
+    "Dashboard Progress", 
+    "Input Progress Proyek", 
+    "Upload Dokumentasi Foto"
+])
 
 # ---------------------------------------------------------
 # MENU 1: DASHBOARD PROGRESS
@@ -150,7 +154,7 @@ if menu == "Dashboard Progress":
                     real_id
                 ))
             else:
-                # Insert baris baru jika ada data baru diisi
+                # Insert baris baru jika ada data baru diisi di tabel
                 if pd.notna(row.get('Nama Kontraktor')) or pd.notna(row.get('Unit Proyek')):
                     cursor.execute("""
                         INSERT INTO laporan_mingguan (
@@ -223,7 +227,48 @@ if menu == "Dashboard Progress":
         st.error(f"Gagal memproses file Excel: {e}")
 
 # ---------------------------------------------------------
-# MENU 2: UPLOAD DOKUMENTASI FOTO
+# MENU 2: INPUT PROGRESS PROYEK (FORMULIR INPUT DATA)
+# ---------------------------------------------------------
+elif menu == "Input Progress Proyek":
+    st.title("📝 Input Progress Proyek Baru")
+    st.write("Silakan isi formulir di bawah ini untuk menambahkan laporan progress proyek baru.")
+
+    with st.form("form_input_progress"):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            jenis_pekerjaan = st.text_input("Jenis Pekerjaan", placeholder="Misal: Pekerjaan Pondasi / Structural")
+            no_spk = st.text_input("Nomor SPK", placeholder="Misal: SPK/2026/09/001")
+            kontraktor = st.text_input("Nama Kontraktor", placeholder="Misal: PT Bangun Sejahtera")
+            unit = st.text_input("Unit Proyek", placeholder="Misal: Blok A1 - Unit 05")
+
+        with col2:
+            nilai_kontrak = st.number_input("Nilai Kontrak (Rp)", min_value=0.0, step=1000000.0, format="%.2f")
+            progress_minggu_lalu = st.number_input("Progress Minggu Lalu (%)", min_value=0.0, max_value=100.0, step=0.1)
+            progress_minggu_ini = st.number_input("Progress Minggu Ini (%)", min_value=0.0, max_value=100.0, step=0.1)
+            catatan = st.text_area("Catatan Pekerjaan", placeholder="Tambahkan catatan khusus pekerjaan...")
+
+        submit_data = st.form_submit_button("💾 Simpan Data Laporan")
+
+        if submit_data:
+            if not kontraktor or not unit:
+                st.warning("Mohon isi minimal Nama Kontraktor dan Unit Proyek.")
+            else:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO laporan_mingguan (
+                        jenis_pekerjaan, no_spk, kontraktor, unit, 
+                        nilai_kontrak, progress_minggu_lalu, progress_minggu_ini, catatan
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    jenis_pekerjaan, no_spk, kontraktor, unit,
+                    nilai_kontrak, progress_minggu_lalu, progress_minggu_ini, catatan
+                ))
+                conn.commit()
+                st.success("✅ Data progress berhasil disimpan ke database!")
+
+# ---------------------------------------------------------
+# MENU 3: UPLOAD DOKUMENTASI FOTO
 # ---------------------------------------------------------
 elif menu == "Upload Dokumentasi Foto":
     st.title("📷 Upload Dokumentasi Foto Pekerjaan")
@@ -251,4 +296,4 @@ elif menu == "Upload Dokumentasi Foto":
                     """, (tipe_dok, unit_proyek, file.name))
 
                 conn.commit()
-                st.success("Foto berhasil diunggah dan disimpan ke database!")
+                st.success("📷 Foto berhasil diunggah dan disimpan ke database!")
