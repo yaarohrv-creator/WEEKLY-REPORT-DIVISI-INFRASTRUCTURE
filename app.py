@@ -15,7 +15,6 @@ st.set_page_config(page_title="Sistem Progress Proyek", layout="wide")
 # FUNGSIONALITAS DATABASE SQLITE BARU (proyek_v2.db)
 # ---------------------------------------------------------
 def init_db():
-    # Menggunakan nama database baru agar otomatis terbuat skema yang bersih dan lengkap
     conn = sqlite3.connect('proyek_v2.db')
     cursor = conn.cursor()
 
@@ -33,7 +32,7 @@ def init_db():
         )
     ''')
 
-    # 2. TABEL LAPORAN_MINGGUAN (Struktur Lengkap)
+    # 2. TABEL LAPORAN_MINGGUAN
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS laporan_mingguan (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -215,7 +214,7 @@ if menu == "Dashboard Progress":
         st.error(f"Gagal memproses file Excel: {e}")
 
 # ---------------------------------------------------------
-# MENU 2: KELOLA MASTER SPK
+# MENU 2: KELOLA MASTER SPK (EDITABLE)
 # ---------------------------------------------------------
 elif menu == "Kelola Master SPK":
     st.title("📑 Kelola Master SPK Proyek")
@@ -251,11 +250,13 @@ elif menu == "Kelola Master SPK":
                     st.error("⚠️ Jenis pekerjaan ini sudah ada di dalam SPK tersebut!")
 
     st.markdown("---")
-    st.subheader("📋 Tampilan Master SPK Sesuai Format Excel")
-    
+    st.subheader("📋 Edit & Kelola Master SPK")
+    st.caption("💡 Kamu bisa mengedit cell secara langsung di bawah ini, atau menambah/menghapus baris, lalu klik tombol Simpan Perubahan.")
+
     try:
         df_master = pd.read_sql_query("""
             SELECT 
+                id AS real_id,
                 no_spk AS [Nomor SPK], 
                 kontraktor AS [Nama Kontraktor], 
                 jenis_pekerjaan AS [Jenis Pekerjaan], 
@@ -263,21 +264,79 @@ elif menu == "Kelola Master SPK":
                 jumlah AS [Jumlah],
                 nilai_pekerjaan AS [Nilai Kontrak Pekerjaan Ini (Rp)]
             FROM master_spk 
-            ORDER BY no_spk ASC
+            ORDER BY id ASC
         """, conn)
-
-        if not df_master.empty:
-            spk_totals = df_master.groupby('Nomor SPK')['Nilai Kontrak Pekerjaan Ini (Rp)'].transform('sum')
-            df_master['Total Nilai Kontrak (Rp)'] = spk_totals
-            
-            st.dataframe(df_master.style.format({
-                'Nilai Kontrak Pekerjaan Ini (Rp)': 'Rp {:,.2f}',
-                'Total Nilai Kontrak (Rp)': 'Rp {:,.2f}'
-            }), use_container_width=True)
-        else:
-            st.info("Belum ada data Master SPK.")
     except Exception:
-        st.info("Belum ada data Master SPK.")
+        df_master = pd.DataFrame()
+
+    if df_master.empty:
+        df_master = pd.DataFrame(columns=[
+            'real_id', 'Nomor SPK', 'Nama Kontraktor', 'Jenis Pekerjaan', 'Unit Proyek', 'Jumlah', 'Nilai Kontrak Pekerjaan Ini (Rp)'
+        ])
+
+    edited_master = st.data_editor(
+        df_master,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "real_id": None,
+            "Nilai Kontrak Pekerjaan Ini (Rp)": st.column_config.NumberColumn(
+                "Nilai Kontrak Pekerjaan Ini (Rp)",
+                format="Rp %d"
+            )
+        },
+        key="editor_master_spk"
+    )
+
+    if st.button("💾 Simpan Perubahan Master SPK"):
+        cursor = conn.cursor()
+        
+        current_ids = [row['real_id'] for idx, row in edited_master.iterrows() if pd.notna(row.get('real_id'))]
+        if current_ids:
+            format_strings = ','.join(['?'] * len(current_ids))
+            cursor.execute(f"DELETE FROM master_spk WHERE id NOT IN ({format_strings})", current_ids)
+        else:
+            cursor.execute("DELETE FROM master_spk")
+
+        for idx, row in edited_master.iterrows():
+            real_id = row.get('real_id')
+            if pd.notna(real_id) and real_id != "":
+                cursor.execute("""
+                    UPDATE master_spk
+                    SET no_spk = ?,
+                        kontraktor = ?,
+                        jenis_pekerjaan = ?,
+                        unit = ?,
+                        jumlah = ?,
+                        nilai_pekerjaan = ?
+                    WHERE id = ?
+                """, (
+                    row.get('Nomor SPK'),
+                    row.get('Nama Kontraktor'),
+                    row.get('Jenis Pekerjaan'),
+                    row.get('Unit Proyek'),
+                    row.get('Jumlah'),
+                    row.get('Nilai Kontrak Pekerjaan Ini (Rp)'),
+                    real_id
+                ))
+            else:
+                if row.get('Nomor SPK') and row.get('Jenis Pekerjaan'):
+                    cursor.execute("""
+                        INSERT INTO master_spk (no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_pekerjaan)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (
+                        row.get('Nomor SPK'),
+                        row.get('Nama Kontraktor'),
+                        row.get('Jenis Pekerjaan'),
+                        row.get('Unit Proyek'),
+                        row.get('Jumlah', 1),
+                        row.get('Nilai Kontrak Pekerjaan Ini (Rp)', 0.0)
+                    ))
+
+        conn.commit()
+        st.success("✅ Master SPK berhasil diperbarui!")
+        st.rerun()
 
 # ---------------------------------------------------------
 # MENU 3: INPUT PROGRESS MINGGUAN
