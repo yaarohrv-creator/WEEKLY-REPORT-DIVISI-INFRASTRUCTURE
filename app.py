@@ -127,7 +127,11 @@ menu = st.sidebar.selectbox("Pilih Menu", [
     "Input Progress Mingguan",
     "Kelola Master SPK"
 ])
-
+# KODE LOGOUT DITAMBAHKAN DI SINI
+st.sidebar.markdown("---")
+if st.sidebar.button("🚪 Logout"):
+    st.session_state["authenticated"] = False
+    st.rerun()
 # ---------------------------------------------------------
 # MENU 1: DASHBOARD PROGRESS & HISTORY
 # ---------------------------------------------------------
