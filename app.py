@@ -77,12 +77,15 @@ if menu == "Dashboard Progress":
             catatan AS [Catatan Pekerjaan]
         FROM laporan_mingguan
         ORDER BY real_id ASC
-    """
+   # 1. Pastikan koneksi database selalu dipanggil di awal script agar tabel otomatis dibuat
+conn = get_connection()
+
+# 2. Ambil data dengan penanganan aman (try-except) agar tidak error saat database masih kosong di Streamlit Cloud
+try:
     df_view = pd.read_sql_query(query_view, conn)
-    
-    if df_view.empty:
-        df_view = pd.DataFrame(columns=[
-            'No', 'real_id', 'Waktu Input', 'Jenis Pekerjaan', 'Nomor SPK', 
+except Exception:
+    # Jika tabel belum siap / masih kosong, buat DataFrame kosong agar aplikasi tidak crash
+    df_view = pd.DataFrame(columns=['id', 'waktu_input', 'kontraktor', 'unit', 'minggu_ke', 'progress', 'catatan']) 
             'Nama Kontraktor', 'Unit Proyek', 'Nilai Kontrak', 
             'Progress Minggu Lalu (%)', 'Progress Minggu Ini (%)', 
             'Selisih / Varian (%)', 'Catatan Pekerjaan'
