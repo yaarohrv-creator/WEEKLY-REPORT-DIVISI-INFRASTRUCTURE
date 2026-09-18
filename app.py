@@ -10,9 +10,13 @@ from openpyxl.utils import get_column_letter
 
 # Konfigurasi Halaman Streamlit
 st.set_page_config(page_title="Sistem Progress Proyek", layout="wide")
-# =========================================================
-# SELIPKAN KODE LOGIN DI SINI (MULAI BARIS 13)
-# =========================================================
+# TAMBAHKAN KODE LOGO DI SINI (Pastikan file logo.png sudah di-upload ke GitHub)
+st.sidebar.image("logo.png", use_container_width=True)
+
+# Folder Penyimpanan Foto
+UPLOAD_DIR = "uploads"
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
