@@ -12,13 +12,46 @@ from openpyxl.utils import get_column_letter
 st.set_page_config(page_title="Sistem Progress Proyek", layout="wide")
 
 # ---------------------------------------------------------
-# FUNGSIONALITAS DATABASE SQLITE
+# FUNGSIONALITAS DATABASE SQLITE & MIGRASI OTOMATIS
 # ---------------------------------------------------------
 def get_connection():
     conn = sqlite3.connect('proyek.db')
     cursor = conn.cursor()
 
-    # 1. Tabel Master SPK (Lengkap dengan Jumlah & Nilai Kontrak Pekerjaan)
+    # Cek struktur tabel master_spk saat ini
+    cursor.execute("PRAGMA table_info(master_spk)")
+    columns = cursor.fetchall()
+
+    if columns:
+        col_names = [col[1] for col in columns]
+        # Jika struktur tabel masih versi lama (belum ada kolom 'id' atau 'jumlah')
+        if 'id' not in col_names or 'jumlah' not in col_names:
+            cursor.execute("ALTER TABLE master_spk RENAME TO master_spk_old")
+            cursor.execute('''
+                CREATE TABLE master_spk (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    no_spk TEXT,
+                    kontraktor TEXT,
+                    jenis_pekerjaan TEXT,
+                    unit TEXT,
+                    jumlah INTEGER DEFAULT 1,
+                    nilai_pekerjaan REAL,
+                    UNIQUE(no_spk, jenis_pekerjaan)
+                )
+            ''')
+            # Salin data dari tabel lama ke tabel baru
+            try:
+                cursor.execute('''
+                    INSERT OR IGNORE INTO master_spk (no_spk, jenis_pekerjaan, kontraktor, unit, nilai_pekerjaan)
+                    SELECT no_spk, jenis_pekerjaan, kontraktor, unit, 
+                           COALESCE(nilai_kontrak, nilai_pekerjaan, 0)
+                    FROM master_spk_old
+                ''')
+            except Exception:
+                pass
+            cursor.execute("DROP TABLE master_spk_old")
+
+    # 1. Tabel Master SPK (Mendukung Multi-Pekerjaan per SPK)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS master_spk (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,17 +64,6 @@ def get_connection():
             UNIQUE(no_spk, jenis_pekerjaan)
         )
     ''')
-
-    # Migration: pastikan kolom jumlah tersedia jika DB lama dipakai
-    try:
-        cursor.execute("ALTER TABLE master_spk ADD COLUMN jumlah INTEGER DEFAULT 1")
-    except sqlite3.OperationalError:
-        pass
-
-    try:
-        cursor.execute("ALTER TABLE master_spk ADD COLUMN nilai_pekerjaan REAL")
-    except sqlite3.OperationalError:
-        pass
 
     # 2. Tabel Laporan Progress Mingguan
     cursor.execute('''
@@ -59,6 +81,17 @@ def get_connection():
             catatan TEXT
         )
     ''')
+
+    # Migration untuk menambahkan kolom pada laporan_mingguan jika belum ada
+    try:
+        cursor.execute("ALTER TABLE laporan_mingguan ADD COLUMN jumlah INTEGER DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE laporan_mingguan ADD COLUMN nilai_pekerjaan REAL")
+    except sqlite3.OperationalError:
+        pass
 
     # 3. Tabel Dokumentasi Foto
     cursor.execute('''
@@ -226,7 +259,7 @@ if menu == "Dashboard Progress":
         st.error(f"Gagal memproses file Excel: {e}")
 
 # ---------------------------------------------------------
-# MENU 2: KELOLA MASTER SPK (SESUAI DESAIN EXCEL BARU)
+# MENU 2: KELOLA MASTER SPK
 # ---------------------------------------------------------
 elif menu == "Kelola Master SPK":
     st.title("📑 Kelola Master SPK Proyek")
@@ -237,7 +270,7 @@ elif menu == "Kelola Master SPK":
         with c1:
             no_spk = st.text_input("Nomor SPK", placeholder="Contoh: 048/PSM2/BPRE/BPSL/JKTO/INF/III/2026")
             kontraktor = st.text_input("Nama Kontraktor", placeholder="Contoh: CV. Selamat Jaya")
-            jenis_pekerjaan = st.text_input("Jenis Pekerjaan", placeholder="Contoh: Renovasi atap R. G2 No 17 Tahun 1996 - BPRE")
+            jenis_pekerjaan = st.text_input("Jenis Pekerjaan", placeholder="Contoh: Renovasi atap R. G2 No 18 Tahun 1996 - BPRE")
         with c2:
             unit = st.text_input("Unit Proyek", placeholder="Contoh: BPRE")
             jumlah = st.number_input("Jumlah", min_value=1, step=1, value=1)
@@ -278,18 +311,18 @@ elif menu == "Kelola Master SPK":
         """, conn)
 
         if not df_master.empty:
-            # Hitung Total Nilai Kontrak per SPK
+            # Hitung Total Nilai Kontrak Akumulasi per SPK
             spk_totals = df_master.groupby('Nomor SPK')['Nilai Kontrak Pekerjaan Ini (Rp)'].transform('sum')
             df_master['Total Nilai Kontrak (Rp)'] = spk_totals
             
-            # Format Tampilan Angka Rupiah
+            # Format tampilan angka rupiah
             st.dataframe(df_master.style.format({
                 'Nilai Kontrak Pekerjaan Ini (Rp)': 'Rp {:,.2f}',
                 'Total Nilai Kontrak (Rp)': 'Rp {:,.2f}'
             }), use_container_width=True)
         else:
             st.info("Belum ada data Master SPK.")
-    except Exception as e:
+    except Exception:
         st.info("Belum ada data Master SPK.")
 
 # ---------------------------------------------------------
@@ -338,7 +371,8 @@ elif menu == "Input Progress Mingguan":
         if not last_progress_df.empty and pd.notna(last_progress_df.iloc[0]['progress_minggu_ini']):
             default_progress_lalu = float(last_progress_df.iloc[0]['progress_minggu_ini'])
 
-        st.info(f"📌 **Detail:** {spk_detail['kontraktor']} | Unit: **{spk_detail['unit']}** | Jumlah: **{spk_detail['jumlah']}** | Nilai Pekerjaan: **Rp {spk_detail['nilai_pekerjaan']:,.2f}**")
+        nilai_peks = spk_detail['nilai_pekerjaan'] if pd.notna(spk_detail['nilai_pekerjaan']) else 0.0
+        st.info(f"📌 **Detail:** {spk_detail['kontraktor']} | Unit: **{spk_detail['unit']}** | Jumlah: **{spk_detail['jumlah']}** | Nilai Pekerjaan: **Rp {nilai_peks:,.2f}**")
 
         with st.form("form_update_progress_mingguan"):
             col1, col2 = st.columns(2)
@@ -347,7 +381,7 @@ elif menu == "Input Progress Mingguan":
                 st.text_input("Nama Kontraktor", value=spk_detail['kontraktor'], disabled=True)
                 st.text_input("Unit Proyek", value=spk_detail['unit'], disabled=True)
                 st.number_input("Jumlah", value=int(spk_detail['jumlah']), disabled=True)
-                st.number_input("Nilai Pekerjaan (Rp)", value=float(spk_detail['nilai_pekerjaan'] or 0.0), disabled=True)
+                st.number_input("Nilai Pekerjaan (Rp)", value=float(nilai_peks), disabled=True)
 
             with col2:
                 prog_lalu = st.number_input("Progress Minggu Lalu (%)", value=default_progress_lalu, min_value=0.0, max_value=100.0)
