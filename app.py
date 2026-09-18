@@ -18,40 +18,36 @@ def get_connection():
     conn = sqlite3.connect('proyek.db')
     cursor = conn.cursor()
 
-    # Cek struktur tabel master_spk saat ini
+    # 1. PERBAIKAN TABEL MASTER_SPK
     cursor.execute("PRAGMA table_info(master_spk)")
-    columns = cursor.fetchall()
+    columns_master = [col[1] for col in cursor.fetchall()]
 
-    if columns:
-        col_names = [col[1] for col in columns]
-        # Jika struktur tabel masih versi lama (belum ada kolom 'id' atau 'jumlah')
-        if 'id' not in col_names or 'jumlah' not in col_names:
-            cursor.execute("ALTER TABLE master_spk RENAME TO master_spk_old")
+    if columns_master and ('id' not in columns_master or 'jumlah' not in columns_master):
+        cursor.execute("ALTER TABLE master_spk RENAME TO master_spk_old")
+        cursor.execute('''
+            CREATE TABLE master_spk (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                no_spk TEXT,
+                kontraktor TEXT,
+                jenis_pekerjaan TEXT,
+                unit TEXT,
+                jumlah INTEGER DEFAULT 1,
+                nilai_pekerjaan REAL,
+                UNIQUE(no_spk, jenis_pekerjaan)
+            )
+        ''')
+        try:
             cursor.execute('''
-                CREATE TABLE master_spk (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    no_spk TEXT,
-                    kontraktor TEXT,
-                    jenis_pekerjaan TEXT,
-                    unit TEXT,
-                    jumlah INTEGER DEFAULT 1,
-                    nilai_pekerjaan REAL,
-                    UNIQUE(no_spk, jenis_pekerjaan)
-                )
+                INSERT OR IGNORE INTO master_spk (no_spk, jenis_pekerjaan, kontraktor, unit, nilai_pekerjaan)
+                SELECT no_spk, jenis_pekerjaan, kontraktor, unit, 
+                       COALESCE(nilai_kontrak, nilai_pekerjaan, 0)
+                FROM master_spk_old
             ''')
-            # Salin data dari tabel lama ke tabel baru
-            try:
-                cursor.execute('''
-                    INSERT OR IGNORE INTO master_spk (no_spk, jenis_pekerjaan, kontraktor, unit, nilai_pekerjaan)
-                    SELECT no_spk, jenis_pekerjaan, kontraktor, unit, 
-                           COALESCE(nilai_kontrak, nilai_pekerjaan, 0)
-                    FROM master_spk_old
-                ''')
-            except Exception:
-                pass
-            cursor.execute("DROP TABLE master_spk_old")
+        except Exception:
+            pass
+        cursor.execute("DROP TABLE master_spk_old")
 
-    # 1. Tabel Master SPK (Mendukung Multi-Pekerjaan per SPK)
+    # Re-check / Buat Tabel Master SPK
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS master_spk (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,7 +61,7 @@ def get_connection():
         )
     ''')
 
-    # 2. Tabel Laporan Progress Mingguan
+    # 2. PERBAIKAN TABEL LAPORAN_MINGGUAN (Penyebab Utama Error)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS laporan_mingguan (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,18 +78,29 @@ def get_connection():
         )
     ''')
 
-    # Migration untuk menambahkan kolom pada laporan_mingguan jika belum ada
-    try:
-        cursor.execute("ALTER TABLE laporan_mingguan ADD COLUMN jumlah INTEGER DEFAULT 1")
-    except sqlite3.OperationalError:
-        pass
+    cursor.execute("PRAGMA table_info(laporan_mingguan)")
+    columns_laporan = [col[1] for col in cursor.fetchall()]
 
-    try:
-        cursor.execute("ALTER TABLE laporan_mingguan ADD COLUMN nilai_pekerjaan REAL")
-    except sqlite3.OperationalError:
-        pass
+    # Pastikan semua kolom pendukung tersedia di tabel laporan_mingguan
+    if 'jenis_pekerjaan' not in columns_laporan:
+        try:
+            cursor.execute("ALTER TABLE laporan_mingguan ADD COLUMN jenis_pekerjaan TEXT")
+        except sqlite3.OperationalError:
+            pass
 
-    # 3. Tabel Dokumentasi Foto
+    if 'jumlah' not in columns_laporan:
+        try:
+            cursor.execute("ALTER TABLE laporan_mingguan ADD COLUMN jumlah INTEGER DEFAULT 1")
+        except sqlite3.OperationalError:
+            pass
+
+    if 'nilai_pekerjaan' not in columns_laporan:
+        try:
+            cursor.execute("ALTER TABLE laporan_mingguan ADD COLUMN nilai_pekerjaan REAL")
+        except sqlite3.OperationalError:
+            pass
+
+    # 3. TABEL DOKUMENTASI FOTO
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS dokumentasi_foto (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -311,11 +318,9 @@ elif menu == "Kelola Master SPK":
         """, conn)
 
         if not df_master.empty:
-            # Hitung Total Nilai Kontrak Akumulasi per SPK
             spk_totals = df_master.groupby('Nomor SPK')['Nilai Kontrak Pekerjaan Ini (Rp)'].transform('sum')
             df_master['Total Nilai Kontrak (Rp)'] = spk_totals
             
-            # Format tampilan angka rupiah
             st.dataframe(df_master.style.format({
                 'Nilai Kontrak Pekerjaan Ini (Rp)': 'Rp {:,.2f}',
                 'Total Nilai Kontrak (Rp)': 'Rp {:,.2f}'
@@ -365,11 +370,13 @@ elif menu == "Input Progress Mingguan":
             WHERE no_spk = ? AND jenis_pekerjaan = ?
             ORDER BY id DESC LIMIT 1
         """
-        last_progress_df = pd.read_sql_query(last_progress_query, conn, params=(selected_spk, selected_job))
-        
-        default_progress_lalu = 0.0
-        if not last_progress_df.empty and pd.notna(last_progress_df.iloc[0]['progress_minggu_ini']):
-            default_progress_lalu = float(last_progress_df.iloc[0]['progress_minggu_ini'])
+        try:
+            last_progress_df = pd.read_sql_query(last_progress_query, conn, params=(selected_spk, selected_job))
+            default_progress_lalu = 0.0
+            if not last_progress_df.empty and pd.notna(last_progress_df.iloc[0]['progress_minggu_ini']):
+                default_progress_lalu = float(last_progress_df.iloc[0]['progress_minggu_ini'])
+        except Exception:
+            default_progress_lalu = 0.0
 
         nilai_peks = spk_detail['nilai_pekerjaan'] if pd.notna(spk_detail['nilai_pekerjaan']) else 0.0
         st.info(f"📌 **Detail:** {spk_detail['kontraktor']} | Unit: **{spk_detail['unit']}** | Jumlah: **{spk_detail['jumlah']}** | Nilai Pekerjaan: **Rp {nilai_peks:,.2f}**")
