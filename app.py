@@ -12,7 +12,7 @@ from openpyxl.utils import get_column_letter
 st.set_page_config(page_title="Sistem Progress Proyek", layout="wide")
 
 # ---------------------------------------------------------
-# FUNGSIONALITAS DATABASE SQLITE & MIGRASI OTOMATIS
+# FUNGSIONALITAS DATABASE SQLITE & MIGRASI AMAN
 # ---------------------------------------------------------
 def get_connection():
     conn = sqlite3.connect('proyek.db')
@@ -22,7 +22,7 @@ def get_connection():
     cursor.execute("PRAGMA table_info(master_spk)")
     columns_master = [col[1] for col in cursor.fetchall()]
 
-    if columns_master and ('id' not in columns_master or 'jumlah' not in columns_master):
+    if columns_master and ('id' not in columns_master or 'jumlah' not in columns_master or 'jenis_pekerjaan' not in columns_master):
         cursor.execute("ALTER TABLE master_spk RENAME TO master_spk_old")
         cursor.execute('''
             CREATE TABLE master_spk (
@@ -47,7 +47,6 @@ def get_connection():
             pass
         cursor.execute("DROP TABLE master_spk_old")
 
-    # Re-check / Buat Tabel Master SPK
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS master_spk (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,41 +60,61 @@ def get_connection():
         )
     ''')
 
-    # 2. PERBAIKAN TABEL LAPORAN_MINGGUAN (Penyebab Error Insert)
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS laporan_mingguan (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            waktu_input DATETIME DEFAULT CURRENT_TIMESTAMP,
-            no_spk TEXT,
-            jenis_pekerjaan TEXT,
-            kontraktor TEXT,
-            unit TEXT,
-            jumlah INTEGER,
-            nilai_pekerjaan REAL,
-            progress_minggu_lalu REAL,
-            progress_minggu_ini REAL,
-            catatan TEXT
-        )
-    ''')
-
+    # 2. PERBAIKAN TOTAL TABEL LAPORAN_MINGGUAN (Penyebab Utama Error Insert)
     cursor.execute("PRAGMA table_info(laporan_mingguan)")
     columns_laporan = [col[1] for col in cursor.fetchall()]
 
-    # Otomatis tambahkan kolom jika belum ada di database lama
-    columns_to_add = {
-        'jenis_pekerjaan': 'TEXT',
-        'jumlah': 'INTEGER DEFAULT 1',
-        'nilai_pekerjaan': 'REAL',
-        'kontraktor': 'TEXT',
-        'unit': 'TEXT'
-    }
+    # Jika tabel sudah ada tapi belum punya jenis_pekerjaan atau kolom penting lainnya, recreate otomatis
+    required_cols = ['jenis_pekerjaan', 'jumlah', 'nilai_pekerjaan', 'kontraktor', 'unit']
+    needs_rebuild = False
+    if columns_laporan:
+        for req in required_cols:
+            if req not in columns_laporan:
+                needs_rebuild = True
+                break
 
-    for col_name, col_type in columns_to_add.items():
-        if col_name not in columns_laporan:
-            try:
-                cursor.execute(f"ALTER TABLE laporan_mingguan ADD COLUMN {col_name} {col_type}")
-            except sqlite3.OperationalError:
-                pass
+    if needs_rebuild:
+        cursor.execute("ALTER TABLE laporan_mingguan RENAME TO laporan_mingguan_old")
+        cursor.execute('''
+            CREATE TABLE laporan_mingguan (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                waktu_input DATETIME DEFAULT CURRENT_TIMESTAMP,
+                no_spk TEXT,
+                jenis_pekerjaan TEXT,
+                kontraktor TEXT,
+                unit TEXT,
+                jumlah INTEGER,
+                nilai_pekerjaan REAL,
+                progress_minggu_lalu REAL,
+                progress_minggu_ini REAL,
+                catatan TEXT
+            )
+        ''')
+        try:
+            cursor.execute('''
+                INSERT INTO laporan_mingguan (id, waktu_input, no_spk, progress_minggu_lalu, progress_minggu_ini, catatan)
+                SELECT id, waktu_input, no_spk, progress_minggu_lalu, progress_minggu_ini, catatan
+                FROM laporan_mingguan_old
+            ''')
+        except Exception:
+            pass
+        cursor.execute("DROP TABLE laporan_mingguan_old")
+    else:
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS laporan_mingguan (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                waktu_input DATETIME DEFAULT CURRENT_TIMESTAMP,
+                no_spk TEXT,
+                jenis_pekerjaan TEXT,
+                kontraktor TEXT,
+                unit TEXT,
+                jumlah INTEGER,
+                nilai_pekerjaan REAL,
+                progress_minggu_lalu REAL,
+                progress_minggu_ini REAL,
+                catatan TEXT
+            )
+        ''')
 
     # 3. TABEL DOKUMENTASI FOTO
     cursor.execute('''
@@ -403,14 +422,14 @@ elif menu == "Input Progress Mingguan":
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     selected_spk,
-                    spk_detail['kontraktor'],
-                    selected_job,
-                    spk_detail['unit'],
+                    str(spk_detail['kontraktor']),
+                    str(selected_job),
+                    str(spk_detail['unit']),
                     int(spk_detail['jumlah']),
                     float(spk_detail['nilai_pekerjaan']),
-                    prog_lalu,
-                    prog_ini,
-                    catatan
+                    float(prog_lalu),
+                    float(prog_ini),
+                    str(catatan)
                 ))
                 conn.commit()
                 st.success(f"✅ Progress mingguan untuk '{selected_job}' (SPK: {selected_spk}) berhasil disimpan!")
