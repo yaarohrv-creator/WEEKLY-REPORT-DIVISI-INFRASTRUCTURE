@@ -120,11 +120,16 @@ except Exception:
                 nilai_kontrak_val = 0 if pd.isna(row['Nilai Kontrak']) else float(row['Nilai Kontrak'])
                 
                 cursor.execute("""
-                    cursor.execute("""
+                    # Perhatikan posisi cursor.execute tidak menjorok ke kanan secara berlebihan
+conn = get_connection()
+cursor = conn.cursor()
+
+cursor.execute("""
     UPDATE laporan_mingguan
     SET progress = ?
     WHERE id = ?
 """)
+conn.commit()
                 """, (
                     jenis_pekerjaan_val,
                     no_spk_val,
