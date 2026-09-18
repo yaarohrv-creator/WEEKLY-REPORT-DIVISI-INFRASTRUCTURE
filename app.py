@@ -214,7 +214,7 @@ if menu == "Dashboard Progress":
         st.error(f"Gagal memproses file Excel: {e}")
 
 # ---------------------------------------------------------
-# MENU 2: KELOLA MASTER SPK (EDITABLE)
+# MENU 2: KELOLA MASTER SPK (EDITABLE + TOTAL NILAI KONTRAK)
 # ---------------------------------------------------------
 elif menu == "Kelola Master SPK":
     st.title("📑 Kelola Master SPK Proyek")
@@ -251,7 +251,7 @@ elif menu == "Kelola Master SPK":
 
     st.markdown("---")
     st.subheader("📋 Edit & Kelola Master SPK")
-    st.caption("💡 Kamu bisa mengedit cell secara langsung di bawah ini, atau menambah/menghapus baris, lalu klik tombol Simpan Perubahan.")
+    st.caption("💡 **Cara Edit:** Klik langsung pada cell yang ingin diubah. Klik 'Simpan Perubahan Master SPK' untuk memperbarui database.")
 
     try:
         df_master = pd.read_sql_query("""
@@ -271,8 +271,12 @@ elif menu == "Kelola Master SPK":
 
     if df_master.empty:
         df_master = pd.DataFrame(columns=[
-            'real_id', 'Nomor SPK', 'Nama Kontraktor', 'Jenis Pekerjaan', 'Unit Proyek', 'Jumlah', 'Nilai Kontrak Pekerjaan Ini (Rp)'
+            'real_id', 'Nomor SPK', 'Nama Kontraktor', 'Jenis Pekerjaan', 'Unit Proyek', 'Jumlah', 'Nilai Kontrak Pekerjaan Ini (Rp)', 'Total Nilai Kontrak (Rp)'
         ])
+    else:
+        # Hitung Total Nilai Kontrak per SPK secara dinamis
+        spk_totals = df_master.groupby('Nomor SPK')['Nilai Kontrak Pekerjaan Ini (Rp)'].transform('sum')
+        df_master['Total Nilai Kontrak (Rp)'] = spk_totals
 
     edited_master = st.data_editor(
         df_master,
@@ -280,10 +284,20 @@ elif menu == "Kelola Master SPK":
         use_container_width=True,
         hide_index=True,
         column_config={
-            "real_id": None,
+            "real_id": None, # Sembunyikan ID internal database
+            "Nomor SPK": st.column_config.TextColumn("Nomor SPK"),
+            "Nama Kontraktor": st.column_config.TextColumn("Nama Kontraktor"),
+            "Jenis Pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan"),
+            "Unit Proyek": st.column_config.TextColumn("Unit Proyek"),
+            "Jumlah": st.column_config.NumberColumn("Jumlah", min_value=1, step=1),
             "Nilai Kontrak Pekerjaan Ini (Rp)": st.column_config.NumberColumn(
                 "Nilai Kontrak Pekerjaan Ini (Rp)",
                 format="Rp %d"
+            ),
+            "Total Nilai Kontrak (Rp)": st.column_config.NumberColumn(
+                "Total Nilai Kontrak (Rp)",
+                format="Rp %d",
+                disabled=True # Di-disable karena kalkulasi otomatis
             )
         },
         key="editor_master_spk"
@@ -292,6 +306,7 @@ elif menu == "Kelola Master SPK":
     if st.button("💾 Simpan Perubahan Master SPK"):
         cursor = conn.cursor()
         
+        # Hapus baris di database jika ada yang dihapus dari tabel
         current_ids = [row['real_id'] for idx, row in edited_master.iterrows() if pd.notna(row.get('real_id'))]
         if current_ids:
             format_strings = ','.join(['?'] * len(current_ids))
@@ -299,6 +314,7 @@ elif menu == "Kelola Master SPK":
         else:
             cursor.execute("DELETE FROM master_spk")
 
+        # Update atau tambah data baru
         for idx, row in edited_master.iterrows():
             real_id = row.get('real_id')
             if pd.notna(real_id) and real_id != "":
