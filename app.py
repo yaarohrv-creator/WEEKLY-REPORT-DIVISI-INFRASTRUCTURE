@@ -12,41 +12,61 @@ from openpyxl.utils import get_column_letter
 st.set_page_config(page_title="Sistem Progress Proyek", layout="wide")
 
 # ---------------------------------------------------------
-# FUNGSIONALITAS DATABASE SQLITE & MIGRASI AMAN
+# FUNGSIONALITAS DATABASE SQLITE
 # ---------------------------------------------------------
 def get_connection():
     conn = sqlite3.connect('proyek.db')
+    return conn
+
+conn = get_connection()
+
+# Fungsi untuk memastikan skema tabel laporan_mingguan selalu lengkap
+def ensure_laporan_mingguan_table(conn):
     cursor = conn.cursor()
+    # 1. Buat tabel jika belum ada sama sekali
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS laporan_mingguan (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            waktu_input DATETIME DEFAULT CURRENT_TIMESTAMP,
+            no_spk TEXT,
+            jenis_pekerjaan TEXT,
+            kontraktor TEXT,
+            unit TEXT,
+            jumlah INTEGER,
+            nilai_pekerjaan REAL,
+            progress_minggu_lalu REAL,
+            progress_minggu_ini REAL,
+            catatan TEXT
+        )
+    ''')
+    
+    # 2. Cek kolom yang ada dan tambahkan kolom baru jika belum ada
+    cursor.execute("PRAGMA table_info(laporan_mingguan)")
+    existing_columns = [col[1] for col in cursor.fetchall()]
+    
+    columns_to_add = {
+        'jenis_pekerjaan': 'TEXT',
+        'kontraktor': 'TEXT',
+        'unit': 'TEXT',
+        'jumlah': 'INTEGER',
+        'nilai_pekerjaan': 'REAL',
+        'progress_minggu_lalu': 'REAL',
+        'progress_minggu_ini': 'REAL',
+        'catatan': 'TEXT'
+    }
+    
+    for col_name, col_type in columns_to_add.items():
+        if col_name not in existing_columns:
+            try:
+                cursor.execute(f"ALTER TABLE laporan_mingguan ADD COLUMN {col_name} {col_type}")
+            except sqlite3.OperationalError:
+                pass
+                
+    conn.commit()
 
-    # 1. PERBAIKAN TABEL MASTER_SPK
-    cursor.execute("PRAGMA table_info(master_spk)")
-    columns_master = [col[1] for col in cursor.fetchall()]
-
-    if columns_master and ('id' not in columns_master or 'jumlah' not in columns_master or 'jenis_pekerjaan' not in columns_master):
-        cursor.execute("ALTER TABLE master_spk RENAME TO master_spk_old")
-        cursor.execute('''
-            CREATE TABLE master_spk (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                no_spk TEXT,
-                kontraktor TEXT,
-                jenis_pekerjaan TEXT,
-                unit TEXT,
-                jumlah INTEGER DEFAULT 1,
-                nilai_pekerjaan REAL,
-                UNIQUE(no_spk, jenis_pekerjaan)
-            )
-        ''')
-        try:
-            cursor.execute('''
-                INSERT OR IGNORE INTO master_spk (no_spk, jenis_pekerjaan, kontraktor, unit, nilai_pekerjaan)
-                SELECT no_spk, jenis_pekerjaan, kontraktor, unit, 
-                       COALESCE(nilai_kontrak, nilai_pekerjaan, 0)
-                FROM master_spk_old
-            ''')
-        except Exception:
-            pass
-        cursor.execute("DROP TABLE master_spk_old")
-
+# Ensure master_spk table exists
+def ensure_master_spk_table(conn):
+    cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS master_spk (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,78 +79,10 @@ def get_connection():
             UNIQUE(no_spk, jenis_pekerjaan)
         )
     ''')
-
-    # 2. PERBAIKAN TOTAL TABEL LAPORAN_MINGGUAN (Penyebab Utama Error Insert)
-    cursor.execute("PRAGMA table_info(laporan_mingguan)")
-    columns_laporan = [col[1] for col in cursor.fetchall()]
-
-    # Jika tabel sudah ada tapi belum punya jenis_pekerjaan atau kolom penting lainnya, recreate otomatis
-    required_cols = ['jenis_pekerjaan', 'jumlah', 'nilai_pekerjaan', 'kontraktor', 'unit']
-    needs_rebuild = False
-    if columns_laporan:
-        for req in required_cols:
-            if req not in columns_laporan:
-                needs_rebuild = True
-                break
-
-    if needs_rebuild:
-        cursor.execute("ALTER TABLE laporan_mingguan RENAME TO laporan_mingguan_old")
-        cursor.execute('''
-            CREATE TABLE laporan_mingguan (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                waktu_input DATETIME DEFAULT CURRENT_TIMESTAMP,
-                no_spk TEXT,
-                jenis_pekerjaan TEXT,
-                kontraktor TEXT,
-                unit TEXT,
-                jumlah INTEGER,
-                nilai_pekerjaan REAL,
-                progress_minggu_lalu REAL,
-                progress_minggu_ini REAL,
-                catatan TEXT
-            )
-        ''')
-        try:
-            cursor.execute('''
-                INSERT INTO laporan_mingguan (id, waktu_input, no_spk, progress_minggu_lalu, progress_minggu_ini, catatan)
-                SELECT id, waktu_input, no_spk, progress_minggu_lalu, progress_minggu_ini, catatan
-                FROM laporan_mingguan_old
-            ''')
-        except Exception:
-            pass
-        cursor.execute("DROP TABLE laporan_mingguan_old")
-    else:
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS laporan_mingguan (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                waktu_input DATETIME DEFAULT CURRENT_TIMESTAMP,
-                no_spk TEXT,
-                jenis_pekerjaan TEXT,
-                kontraktor TEXT,
-                unit TEXT,
-                jumlah INTEGER,
-                nilai_pekerjaan REAL,
-                progress_minggu_lalu REAL,
-                progress_minggu_ini REAL,
-                catatan TEXT
-            )
-        ''')
-
-    # 3. TABEL DOKUMENTASI FOTO
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS dokumentasi_foto (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tipe_dok TEXT,
-            unit TEXT,
-            nama_file TEXT
-        )
-    ''')
-
     conn.commit()
-    return conn
 
-# Inisialisasi koneksi database
-conn = get_connection()
+ensure_master_spk_table(conn)
+ensure_laporan_mingguan_table(conn)
 
 # ---------------------------------------------------------
 # NAVIGASI SIDEBAR
@@ -148,6 +100,7 @@ menu = st.sidebar.selectbox("Pilih Menu", [
 # ---------------------------------------------------------
 if menu == "Dashboard Progress":
     st.title("📊 Dashboard Progress Proyek")
+    ensure_laporan_mingguan_table(conn)
 
     query_view = """
         SELECT 
@@ -380,15 +333,14 @@ elif menu == "Input Progress Mingguan":
             params=(selected_spk, selected_job)
         ).iloc[0]
 
-        last_progress_query = """
-            SELECT progress_minggu_ini 
-            FROM laporan_mingguan 
-            WHERE no_spk = ? AND jenis_pekerjaan = ?
-            ORDER BY id DESC LIMIT 1
-        """
+        default_progress_lalu = 0.0
         try:
-            last_progress_df = pd.read_sql_query(last_progress_query, conn, params=(selected_spk, selected_job))
-            default_progress_lalu = 0.0
+            ensure_laporan_mingguan_table(conn)
+            last_progress_df = pd.read_sql_query(
+                "SELECT progress_minggu_ini FROM laporan_mingguan WHERE no_spk = ? AND jenis_pekerjaan = ? ORDER BY id DESC LIMIT 1", 
+                conn, 
+                params=(selected_spk, selected_job)
+            )
             if not last_progress_df.empty and pd.notna(last_progress_df.iloc[0]['progress_minggu_ini']):
                 default_progress_lalu = float(last_progress_df.iloc[0]['progress_minggu_ini'])
         except Exception:
@@ -414,6 +366,9 @@ elif menu == "Input Progress Mingguan":
             submit_progress = st.form_submit_button("💾 Simpan Progress Minggu Ini")
 
             if submit_progress:
+                # Pastikan tabel sudah ter-update secara instan sebelum melakukan query INSERT
+                ensure_laporan_mingguan_table(conn)
+                
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO laporan_mingguan (
@@ -452,6 +407,14 @@ elif menu == "Upload Dokumentasi Foto":
                 st.warning("Mohon isi Nama Unit Proyek dan unggah minimal satu foto.")
             else:
                 cursor = conn.cursor()
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS dokumentasi_foto (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        tipe_dok TEXT,
+                        unit TEXT,
+                        nama_file TEXT
+                    )
+                ''')
                 for file in uploaded_files:
                     file_path = os.path.join(".", file.name)
                     with open(file_path, "wb") as f:
