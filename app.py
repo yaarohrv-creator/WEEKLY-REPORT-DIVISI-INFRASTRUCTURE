@@ -109,7 +109,7 @@ menu = st.sidebar.selectbox("Pilih Menu", [
 # MENU 1: DASHBOARD PROGRESS & HISTORY
 # ---------------------------------------------------------
 if menu == "Dashboard Progress":
-    st.title("📊 Dashboard Progress & History Proyek")
+    st.title("📊 WEEKLY REPORT DIVISI INFRASTRUCTURE")
 
     tab1, tab2 = st.tabs(["📌 Status Progress Terkini", "📜 Riwayat / History Perubahan Progress"])
 
