@@ -12,13 +12,14 @@ from openpyxl.utils import get_column_letter
 st.set_page_config(page_title="Sistem Progress Proyek", layout="wide")
 
 # ---------------------------------------------------------
-# FUNGSIONALITAS DATABASE SQLITE & REBUILD TABEL AUTOMATIS
+# FUNGSIONALITAS DATABASE SQLITE BARU (proyek_v2.db)
 # ---------------------------------------------------------
 def init_db():
-    conn = sqlite3.connect('proyek.db')
+    # Menggunakan nama database baru agar otomatis terbuat skema yang bersih dan lengkap
+    conn = sqlite3.connect('proyek_v2.db')
     cursor = conn.cursor()
 
-    # 1. PERBAIKAN TABEL MASTER_SPK
+    # 1. TABEL MASTER_SPK
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS master_spk (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,30 +33,22 @@ def init_db():
         )
     ''')
 
-    # 2. PERBAIKAN TABEL LAPORAN_MINGGUAN (Hapus & Buat Ulang jika Kolom Belum Lengkap)
-    cursor.execute("PRAGMA table_info(laporan_mingguan)")
-    cols = [c[1] for c in cursor.fetchall()]
-
-    required_cols = ['id', 'waktu_input', 'no_spk', 'jenis_pekerjaan', 'kontraktor', 'unit', 'jumlah', 'nilai_pekerjaan', 'progress_minggu_lalu', 'progress_minggu_ini', 'catatan']
-    
-    # Jika tabel belum lengkap, hapus dan buat ulang dengan struktur sempurna
-    if not cols or any(col not in cols for col in ['jenis_pekerjaan', 'kontraktor', 'unit', 'jumlah', 'nilai_pekerjaan']):
-        cursor.execute("DROP TABLE IF EXISTS laporan_mingguan")
-        cursor.execute('''
-            CREATE TABLE laporan_mingguan (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                waktu_input DATETIME DEFAULT CURRENT_TIMESTAMP,
-                no_spk TEXT,
-                jenis_pekerjaan TEXT,
-                kontraktor TEXT,
-                unit TEXT,
-                jumlah INTEGER,
-                nilai_pekerjaan REAL,
-                progress_minggu_lalu REAL,
-                progress_minggu_ini REAL,
-                catatan TEXT
-            )
-        ''')
+    # 2. TABEL LAPORAN_MINGGUAN (Struktur Lengkap)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS laporan_mingguan (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            waktu_input DATETIME DEFAULT CURRENT_TIMESTAMP,
+            no_spk TEXT,
+            jenis_pekerjaan TEXT,
+            kontraktor TEXT,
+            unit TEXT,
+            jumlah INTEGER,
+            nilai_pekerjaan REAL,
+            progress_minggu_lalu REAL,
+            progress_minggu_ini REAL,
+            catatan TEXT
+        )
+    ''')
 
     # 3. TABEL DOKUMENTASI FOTO
     cursor.execute('''
