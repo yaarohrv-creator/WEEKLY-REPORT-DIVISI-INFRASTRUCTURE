@@ -373,22 +373,51 @@ if menu == MENU_DASHBOARD:
                 st.success("✅ Data yang dicentang/dihapus berhasil dibersihkan dari database!")
                 st.rerun()
 
-        # Tombol Simpan Perubahan Data (hanya muncul jika ada data)
+       # -------------------------------------------------------------------------
+        # PROSES SIMPAN PERUBAHAN & HAPUS PERMANEN
+        # -------------------------------------------------------------------------
         if not df_data.empty:
+            # Ambil indeks baris yang dicentang hapus di UI
+            deleted_indices = []
+            if editor_key in st.session_state and "deleted_rows" in st.session_state[editor_key]:
+                deleted_indices = st.session_state[editor_key]["deleted_rows"]
+
             if st.button("💾 Simpan Perubahan Data", key=f"btn_save_{tab_key_prefix}"):
                 with get_db_connection() as conn:
                     cursor = conn.cursor()
+
+                    # 1. EKSEKUSI HAPUS JIKA ADA BARIS YANG DICENTANG
+                    if deleted_indices:
+                        for idx in deleted_indices:
+                            row_to_del = df_display.iloc[idx]
+                            real_id = row_to_del.get('real_id')
+                            no_spk = row_to_del.get('Nomor SPK')
+                            j_pek = row_to_del.get('Jenis Pekerjaan')
+
+                            # Hapus dari semua tabel terkait
+                            if pd.notna(real_id):
+                                cursor.execute("DELETE FROM laporan_mingguan WHERE id = ?", (real_id,))
+                            cursor.execute("DELETE FROM master_spk WHERE no_spk = ? AND jenis_pekerjaan = ?", (no_spk, j_pek))
+                            cursor.execute("DELETE FROM history_progress WHERE no_spk = ? AND jenis_pekerjaan = ?", (no_spk, j_pek))
+
+                    # 2. EKSEKUSI UPDATE UNTUK BARIS YANG TIDAK DIHAPUS
                     for idx, row in edited_df.iterrows():
-                        if idx < len(df_data):
-                            real_id = df_data.iloc[idx]['real_id']
+                        if idx not in deleted_indices and idx < len(df_display):
+                            real_id = df_display.iloc[idx].get('real_id')
                             if pd.notna(real_id):
                                 cursor.execute("""
                                     UPDATE laporan_mingguan
                                     SET progress_minggu_ini = ?, catatan = ?
                                     WHERE id = ?
                                 """, (row.get('Progress Minggu Ini (%)'), row.get('Catatan Pekerjaan Terbaru'), real_id))
+
                     conn.commit()
-                st.success("Perubahan data berhasil disimpan!")
+                
+                # Reset state editor agar centang hilang setelah rerun
+                if editor_key in st.session_state:
+                    del st.session_state[editor_key]
+
+                st.success("✅ Perubahan & penghapusan data berhasil disimpan!")
                 st.rerun()
 
             st.markdown("---")
