@@ -576,7 +576,19 @@ elif menu == MENU_INPUT:
                         st.success(f"✅ Laporan mingguan untuk '{selected_spk_text}' berhasil disimpan!")
                         st.rerun()
 
-     
+# --- TAB 1: INPUT PROGRESS BANGKA ---
+        with tab_i_bangka:
+            st.subheader("🏝️ Input Progress - Wilayah Bangka")
+            # Saring Master SPK untuk Bangka (Unit mengandung BKA/BANGKA)
+            df_bangka_master = df_master_all[df_master_all['unit'].str.contains('BANGKA|BKA', case=False, na=False)]
+            render_input_form(df_bangka_master, "bangka")
+
+        # --- TAB 2: INPUT PROGRESS BELITUNG ---
+        with tab_i_belitung:
+            st.subheader("🏖️ Input Progress - Wilayah Belitung")
+            # Saring Master SPK untuk Belitung (Unit mengandung BLT/BELITUNG)
+            df_belitung_master = df_master_all[df_master_all['unit'].str.contains('BELITUNG|BLT', case=False, na=False)]
+            render_input_form(df_belitung_master, "belitung")     
 # ---------------------------------------------------------
 # MENU 3: KELOLA MASTER (DENGAN TAB WILAYAH)
 # ---------------------------------------------------------
