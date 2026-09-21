@@ -316,7 +316,7 @@ if menu == MENU_DASHBOARD:
         except Exception:
             df_all = pd.DataFrame()
 
- def render_dashboard_table(df_data, tab_key_prefix):
+    def render_dashboard_table(df_data, tab_key_prefix):
         column_order = [
             'No', 'Nomor SPK', 'Nama Kontraktor', 'Jenis Pekerjaan', 'Unit Proyek', 'Jumlah',
             'Nilai Kontrak Pekerjaan Ini (Rp)', 'Progress Minggu Lalu (%)', 'Progress Minggu Ini (%)',
@@ -325,14 +325,16 @@ if menu == MENU_DASHBOARD:
 
         if df_data.empty:
             st.info("💡 Belum ada data progress untuk wilayah/kategori ini.")
-            df_display = pd.DataFrame(columns=['real_id'] + column_order)
+            # Buat DataFrame kosong dengan struktur kolom yang lengkap
+            df_display = pd.DataFrame(columns=column_order)
         else:
-            df_display = df_data.copy().reset_index(drop=True)
+            df_display = df_data.copy()
             if 'No' not in df_display.columns:
                 df_display.insert(0, 'No', range(1, len(df_display) + 1))
 
-        existing_cols = [c for c in ['real_id'] + column_order if c in df_display.columns]
+        existing_cols = [c for c in column_order if c in df_display.columns]
 
+        # data_editor akan tetap menampilkan header kolom meskipun baris data kosong
         editor_key = f"editor_{tab_key_prefix}"
         edited_df = st.data_editor(
             df_display[existing_cols],
@@ -340,7 +342,7 @@ if menu == MENU_DASHBOARD:
             use_container_width=True,
             hide_index=True,
             column_config={
-                "real_id": None,  # Sembunyikan ID internal database dari tampilan UI
+                "real_id": None,
                 "Jumlah": st.column_config.NumberColumn("Jumlah", format="%d"),
                 "Nilai Kontrak Pekerjaan Ini (Rp)": st.column_config.NumberColumn("Nilai Kontrak (Rp)", format="Rp %d"),
                 "Progress Minggu Lalu (%)": st.column_config.NumberColumn("Progress Minggu Lalu (%)", format="%.2f %%"),
@@ -352,61 +354,42 @@ if menu == MENU_DASHBOARD:
             key=editor_key
         )
 
-        # -------------------------------------------------------------------------
-        # PROSES HAPUS PERMANEN DARI DATABASE SQLITE
-        # -------------------------------------------------------------------------
+        # Otomatis hapus dari database SQLite saat dicentang/dihapus di tabel UI
+        if not df_data.empty and editor_key in st.session_state and "deleted_rows" in st.session_state[editor_key]:
+            deleted_indices = st.session_state[editor_key]["deleted_rows"]
+            if deleted_indices:
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    for idx in deleted_indices:
+                        row_to_del = df_data.iloc[idx]
+                        real_id = row_to_del['real_id']
+                        no_spk = row_to_del['Nomor SPK']
+                        j_pek = row_to_del['Jenis Pekerjaan']
+                        
+                        # Hapus dari database laporan & master
+                        cursor.execute("DELETE FROM laporan_mingguan WHERE id = ?", (real_id,))
+                        cursor.execute("DELETE FROM master_spk WHERE no_spk = ? AND jenis_pekerjaan = ?", (no_spk, j_pek))
+                    conn.commit()
+                st.success("✅ Data yang dicentang/dihapus berhasil dibersihkan dari database!")
+                st.rerun()
+
+        # Tombol Simpan Perubahan Data (hanya muncul jika ada data)
         if not df_data.empty:
-            # Mengambil daftar baris yang dicentang dari state Streamlit
-            deleted_indices = []
-            if editor_key in st.session_state and "deleted_rows" in st.session_state[editor_key]:
-                deleted_indices = st.session_state[editor_key]["deleted_rows"]
-
-            col_btn1, col_btn2 = st.columns([1, 4])
-            
-            with col_btn1:
-                # Tombol simpan perubahan teks/nilai progress
-                if st.button("💾 Simpan Perubahan", key=f"btn_save_{tab_key_prefix}"):
-                    with get_db_connection() as conn:
-                        cursor = conn.cursor()
-                        for idx, row in edited_df.iterrows():
-                            if idx < len(df_display):
-                                real_id = df_display.iloc[idx].get('real_id')
-                                if pd.notna(real_id):
-                                    cursor.execute("""
-                                        UPDATE laporan_mingguan
-                                        SET progress_minggu_ini = ?, catatan = ?
-                                        WHERE id = ?
-                                    """, (row.get('Progress Minggu Ini (%)'), row.get('Catatan Pekerjaan Terbaru'), real_id))
-                        conn.commit()
-                    st.success("Perubahan data berhasil disimpan!")
-                    st.rerun()
-
-            with col_btn2:
-                # Menampilkan tombol khusus hapus permanen saat ada centang baris di UI
-                if deleted_indices:
-                    if st.button(f"🗑️ Hapus Permanen ({len(deleted_indices)} Data Terpilih)", type="primary", key=f"btn_del_{tab_key_prefix}"):
-                        with get_db_connection() as conn:
-                            cursor = conn.cursor()
-                            for idx in deleted_indices:
-                                row_to_del = df_display.iloc[idx]
-                                real_id = row_to_del.get('real_id')
-                                no_spk = row_to_del.get('Nomor SPK')
-                                j_pek = row_to_del.get('Jenis Pekerjaan')
-
-                                # 1. Hapus dari tabel master_spk
-                                cursor.execute("DELETE FROM master_spk WHERE no_spk = ? AND jenis_pekerjaan = ?", (no_spk, j_pek))
-                                
-                                # 2. Hapus dari tabel laporan_mingguan
-                                if pd.notna(real_id):
-                                    cursor.execute("DELETE FROM laporan_mingguan WHERE id = ?", (real_id,))
-                                cursor.execute("DELETE FROM laporan_mingguan WHERE no_spk = ? AND jenis_pekerjaan = ?", (no_spk, j_pek))
-                                
-                                # 3. Hapus dari tabel history_progress
-                                cursor.execute("DELETE FROM history_progress WHERE no_spk = ? AND jenis_pekerjaan = ?", (no_spk, j_pek))
-                                
-                            conn.commit()
-                        st.success("✅ Data berhasil dibersihkan secara permanen dari seluruh tabel database!")
-                        st.rerun()
+            if st.button("💾 Simpan Perubahan Data", key=f"btn_save_{tab_key_prefix}"):
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    for idx, row in edited_df.iterrows():
+                        if idx < len(df_data):
+                            real_id = df_data.iloc[idx]['real_id']
+                            if pd.notna(real_id):
+                                cursor.execute("""
+                                    UPDATE laporan_mingguan
+                                    SET progress_minggu_ini = ?, catatan = ?
+                                    WHERE id = ?
+                                """, (row.get('Progress Minggu Ini (%)'), row.get('Catatan Pekerjaan Terbaru'), real_id))
+                    conn.commit()
+                st.success("Perubahan data berhasil disimpan!")
+                st.rerun()
 
             st.markdown("---")
             st.subheader("📥 Export & Download Laporan")
