@@ -316,7 +316,7 @@ if menu == MENU_DASHBOARD:
         except Exception:
             df_all = pd.DataFrame()
 
-    def render_dashboard_table(df_data, tab_key_prefix):
+ def render_dashboard_table(df_data, tab_key_prefix):
         column_order = [
             'No', 'Nomor SPK', 'Nama Kontraktor', 'Jenis Pekerjaan', 'Unit Proyek', 'Jumlah',
             'Nilai Kontrak Pekerjaan Ini (Rp)', 'Progress Minggu Lalu (%)', 'Progress Minggu Ini (%)',
@@ -325,16 +325,14 @@ if menu == MENU_DASHBOARD:
 
         if df_data.empty:
             st.info("💡 Belum ada data progress untuk wilayah/kategori ini.")
-            # Buat DataFrame kosong dengan struktur kolom yang lengkap
-            df_display = pd.DataFrame(columns=column_order)
+            df_display = pd.DataFrame(columns=['real_id'] + column_order)
         else:
-            df_display = df_data.copy()
+            df_display = df_data.copy().reset_index(drop=True)
             if 'No' not in df_display.columns:
                 df_display.insert(0, 'No', range(1, len(df_display) + 1))
 
-        existing_cols = [c for c in column_order if c in df_display.columns]
+        existing_cols = [c for c in ['real_id'] + column_order if c in df_display.columns]
 
-        # data_editor akan tetap menampilkan header kolom meskipun baris data kosong
         editor_key = f"editor_{tab_key_prefix}"
         edited_df = st.data_editor(
             df_display[existing_cols],
@@ -354,70 +352,75 @@ if menu == MENU_DASHBOARD:
             key=editor_key
         )
 
-        # Otomatis hapus dari database SQLite saat dicentang/dihapus di tabel UI
-        if not df_data.empty and editor_key in st.session_state and "deleted_rows" in st.session_state[editor_key]:
-            deleted_indices = st.session_state[editor_key]["deleted_rows"]
-            if deleted_indices:
-                with get_db_connection() as conn:
-                    cursor = conn.cursor()
-                    for idx in deleted_indices:
-                        row_to_del = df_data.iloc[idx]
-                        real_id = row_to_del['real_id']
-                        no_spk = row_to_del['Nomor SPK']
-                        j_pek = row_to_del['Jenis Pekerjaan']
-                        
-                        # Hapus dari database laporan & master
-                        cursor.execute("DELETE FROM laporan_mingguan WHERE id = ?", (real_id,))
-                        cursor.execute("DELETE FROM master_spk WHERE no_spk = ? AND jenis_pekerjaan = ?", (no_spk, j_pek))
-                    conn.commit()
-                st.success("✅ Data yang dicentang/dihapus berhasil dibersihkan dari database!")
-                st.rerun()
-
-       # -------------------------------------------------------------------------
-        # PROSES SIMPAN PERUBAHAN & HAPUS PERMANEN
+        # -------------------------------------------------------------------------
+        # DETEKSI BARIS DIHAPUS & PROSES HAPUS PERMANEN
         # -------------------------------------------------------------------------
         if not df_data.empty:
-            # Ambil indeks baris yang dicentang hapus di UI
+            # Ambil indeks yang dihapus/dicentang lewat UI data_editor
             deleted_indices = []
             if editor_key in st.session_state and "deleted_rows" in st.session_state[editor_key]:
                 deleted_indices = st.session_state[editor_key]["deleted_rows"]
 
+            # Jika pengguna menghapus baris di UI Streamlit
+            if deleted_indices:
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    for idx in deleted_indices:
+                        if idx < len(df_display):
+                            row_to_del = df_display.iloc[idx]
+                            real_id = row_to_del.get('real_id')
+                            no_spk = str(row_to_del.get('Nomor SPK', '')).strip()
+                            j_pek = str(row_to_del.get('Jenis Pekerjaan', '')).strip()
+
+                            # 1. Hapus berdasar ID jika ada
+                            if pd.notna(real_id):
+                                cursor.execute("DELETE FROM laporan_mingguan WHERE id = ?", (int(real_id),))
+
+                            # 2. Hapus berdasar Nomor SPK & Jenis Pekerjaan (menggunakan TRIM & LOWER agar presisi)
+                            if no_spk:
+                                cursor.execute("""
+                                    DELETE FROM laporan_mingguan 
+                                    WHERE LOWER(TRIM(no_spk)) = LOWER(?) 
+                                       OR (LOWER(TRIM(no_spk)) = LOWER(?) AND LOWER(TRIM(jenis_pekerjaan)) = LOWER(?))
+                                """, (no_spk, no_spk, j_pek))
+
+                                cursor.execute("""
+                                    DELETE FROM master_spk 
+                                    WHERE LOWER(TRIM(no_spk)) = LOWER(?)
+                                """, (no_spk,))
+
+                                cursor.execute("""
+                                    DELETE FROM history_progress 
+                                    WHERE LOWER(TRIM(no_spk)) = LOWER(?)
+                                """, (no_spk,))
+
+                    conn.commit()
+
+                # Hapus state agar tidak memicu ulang
+                if editor_key in st.session_state:
+                    del st.session_state[editor_key]
+
+                st.success("✅ Data yang dicentang/dihapus berhasil dibersihkan permanen dari database!")
+                st.rerun()
+
+            # -------------------------------------------------------------------------
+            # TOMBOL SIMPAN UNTUK EDIT NILAI / TEXT
+            # -------------------------------------------------------------------------
             if st.button("💾 Simpan Perubahan Data", key=f"btn_save_{tab_key_prefix}"):
                 with get_db_connection() as conn:
                     cursor = conn.cursor()
-
-                    # 1. EKSEKUSI HAPUS JIKA ADA BARIS YANG DICENTANG
-                    if deleted_indices:
-                        for idx in deleted_indices:
-                            row_to_del = df_display.iloc[idx]
-                            real_id = row_to_del.get('real_id')
-                            no_spk = row_to_del.get('Nomor SPK')
-                            j_pek = row_to_del.get('Jenis Pekerjaan')
-
-                            # Hapus dari semua tabel terkait
-                            if pd.notna(real_id):
-                                cursor.execute("DELETE FROM laporan_mingguan WHERE id = ?", (real_id,))
-                            cursor.execute("DELETE FROM master_spk WHERE no_spk = ? AND jenis_pekerjaan = ?", (no_spk, j_pek))
-                            cursor.execute("DELETE FROM history_progress WHERE no_spk = ? AND jenis_pekerjaan = ?", (no_spk, j_pek))
-
-                    # 2. EKSEKUSI UPDATE UNTUK BARIS YANG TIDAK DIHAPUS
                     for idx, row in edited_df.iterrows():
-                        if idx not in deleted_indices and idx < len(df_display):
+                        if idx < len(df_display):
                             real_id = df_display.iloc[idx].get('real_id')
                             if pd.notna(real_id):
                                 cursor.execute("""
                                     UPDATE laporan_mingguan
                                     SET progress_minggu_ini = ?, catatan = ?
                                     WHERE id = ?
-                                """, (row.get('Progress Minggu Ini (%)'), row.get('Catatan Pekerjaan Terbaru'), real_id))
-
+                                """, (row.get('Progress Minggu Ini (%)'), row.get('Catatan Pekerjaan Terbaru'), int(real_id)))
                     conn.commit()
-                
-                # Reset state editor agar centang hilang setelah rerun
-                if editor_key in st.session_state:
-                    del st.session_state[editor_key]
 
-                st.success("✅ Perubahan & penghapusan data berhasil disimpan!")
+                st.success("✅ Perubahan data berhasil disimpan!")
                 st.rerun()
 
             st.markdown("---")
