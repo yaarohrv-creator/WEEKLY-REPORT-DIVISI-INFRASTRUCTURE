@@ -276,42 +276,86 @@ if menu == "Dashboard Progress":
             st.subheader("📥 Export & Download Laporan")
 
             def generate_excel(df):
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df_excel = df.drop(columns=['real_id'], errors='ignore')
-                    df_excel.to_excel(writer, index=False, sheet_name='Laporan Progress')
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        # ---------------------------------------------------------
+        # SHEET 1: LAPORAN PROGRESS
+        # ---------------------------------------------------------
+        df_excel = df.drop(columns=['real_id'], errors='ignore').copy()
+        
+        # Buat copy khusus untuk Sheet Laporan Progress
+        df_progress = df_excel.copy()
+        
+        # Simpan file ke sheet "Laporan Progress"
+        df_progress.to_excel(writer, index=False, sheet_name='Laporan Progress')
+        worksheet1 = writer.sheets['Laporan Progress']
+        
+        # ---------------------------------------------------------
+        # SHEET 2: FOTO DOKUMENTASI
+        # ---------------------------------------------------------
+        # Ambil kolom terkait dokumentasi
+        cols_foto = [
+            'No', 'Nomor SPK', 'Nama Kontraktor', 'Jenis Pekerjaan', 
+            'Unit Proyek', 'Link Path Foto 1', 'Link Path Foto 2', 'Catatan Pekerjaan Terbaru'
+        ]
+        cols_exist = [c for c in cols_foto if c in df_excel.columns]
+        df_foto = df_excel[cols_exist].copy()
+        
+        df_foto.to_excel(writer, index=False, sheet_name='Foto Dokumentasi')
+        worksheet2 = writer.sheets['Foto Dokumentasi']
+
+        # ---------------------------------------------------------
+        # STYLING & FORMATTING UNTUK KEDUA SHEET
+        # ---------------------------------------------------------
+        header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+        header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        link_font = Font(name="Calibri", size=11, color="0563C1", underline="single")
+        
+        thin_border = Border(
+            left=Side(style='thin', color='000000'),
+            right=Side(style='thin', color='000000'),
+            top=Side(style='thin', color='000000'),
+            bottom=Side(style='thin', color='000000')
+        )
+
+        for sheet in [worksheet1, worksheet2]:
+            # Format Header
+            for col_num in range(1, sheet.max_column + 1):
+                cell = sheet.cell(row=1, column=col_num)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                cell.border = thin_border
+
+            # Format Isi Data & Hyperlink Foto
+            for row_idx in range(2, sheet.max_row + 1):
+                for col_idx in range(1, sheet.max_column + 1):
+                    cell = sheet.cell(row=row_idx, column=col_idx)
+                    cell.border = thin_border
+                    cell.alignment = Alignment(vertical="center")
                     
-                    worksheet = writer.sheets['Laporan Progress']
+                    header_name = str(sheet.cell(row=1, column=col_idx).value)
                     
-                    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
-                    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-                    
-                    thin_border = Border(
-                        left=Side(style='thin', color='000000'),
-                        right=Side(style='thin', color='000000'),
-                        top=Side(style='thin', color='000000'),
-                        bottom=Side(style='thin', color='000000')
-                    )
+                    # Cek jika kolom adalah Link Path Foto
+                    if "Link Path Foto" in header_name and cell.value:
+                        path_str = str(cell.value).strip()
+                        if path_str and path_str.lower() != 'none':
+                            # Ubah nilai tampilan menjadi teks pendek "Lihat Foto X"
+                            foto_num = "1" if "1" in header_name else "2"
+                            cell.value = f"Lihat Foto {foto_num}"
+                            
+                            # Jadikan Tautan / Hyperlink
+                            cell.hyperlink = path_str
+                            cell.font = link_font
+                            cell.alignment = Alignment(horizontal="center", vertical="center")
 
-                    for col_num in range(1, len(df_excel.columns) + 1):
-                        cell = worksheet.cell(row=1, column=col_num)
-                        cell.fill = header_fill
-                        cell.font = header_font
-                        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-                        cell.border = thin_border
+            # Atur Lebar Kolom
+            for col in sheet.columns:
+                max_len = max(len(str(cell.value or '')) for cell in col)
+                col_letter = get_column_letter(col[0].column)
+                sheet.column_dimensions[col_letter].width = max(max_len + 3, 14)
 
-                    for row_idx in range(2, len(df_excel) + 2):
-                        for col_idx in range(1, len(df_excel.columns) + 1):
-                            cell = worksheet.cell(row=row_idx, column=col_idx)
-                            cell.border = thin_border
-                            cell.alignment = Alignment(vertical="center")
-
-                    for col in worksheet.columns:
-                        max_len = max(len(str(cell.value or '')) for cell in col)
-                        col_letter = get_column_letter(col[0].column)
-                        worksheet.column_dimensions[col_letter].width = max(max_len + 3, 12)
-
-                return output.getvalue()
+    return output.getvalue()
 
             try:
                 excel_data = generate_excel(df_view)
