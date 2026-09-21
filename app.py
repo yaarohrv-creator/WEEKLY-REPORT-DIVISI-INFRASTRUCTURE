@@ -317,21 +317,25 @@ if menu == MENU_DASHBOARD:
             df_all = pd.DataFrame()
 
     def render_dashboard_table(df_data, tab_key_prefix):
-        if df_data.empty:
-            st.info("💡 Belum ada data progress untuk wilayah/kategori ini.")
-            return
-
-        df_display = df_data.copy()
-        if 'No' not in df_display.columns:
-            df_display.insert(0, 'No', range(1, len(df_display) + 1))
-
         column_order = [
             'No', 'Nomor SPK', 'Nama Kontraktor', 'Jenis Pekerjaan', 'Unit Proyek', 'Jumlah',
             'Nilai Kontrak Pekerjaan Ini (Rp)', 'Progress Minggu Lalu (%)', 'Progress Minggu Ini (%)',
             'Selisih / Varian (%)', 'Catatan Pekerjaan Terbaru', 'Pratinjau Foto 1', 'Pratinjau Foto 2'
         ]
+
+        if df_data.empty:
+            st.info("💡 Belum ada data progress untuk wilayah/kategori ini.")
+            # Buat DataFrame kosong dengan struktur kolom yang lengkap
+            df_display = pd.DataFrame(columns=column_order)
+        else:
+            df_display = df_data.copy()
+            if 'No' not in df_display.columns:
+                df_display.insert(0, 'No', range(1, len(df_display) + 1))
+
         existing_cols = [c for c in column_order if c in df_display.columns]
 
+        # data_editor akan tetap menampilkan header kolom meskipun baris data kosong
+        editor_key = f"editor_{tab_key_prefix}"
         edited_df = st.data_editor(
             df_display[existing_cols],
             num_rows="dynamic",
@@ -347,63 +351,59 @@ if menu == MENU_DASHBOARD:
                 "Pratinjau Foto 1": st.column_config.ImageColumn("Pratinjau Foto 1"),
                 "Pratinjau Foto 2": st.column_config.ImageColumn("Pratinjau Foto 2"),
             },
-            key=f"editor_{tab_key_prefix}"
+            key=editor_key
         )
 
-        col_sav, col_del = st.columns([2, 2])
-        with col_sav:
+        # Otomatis hapus dari database SQLite saat dicentang/dihapus di tabel UI
+        if not df_data.empty and editor_key in st.session_state and "deleted_rows" in st.session_state[editor_key]:
+            deleted_indices = st.session_state[editor_key]["deleted_rows"]
+            if deleted_indices:
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    for idx in deleted_indices:
+                        row_to_del = df_data.iloc[idx]
+                        real_id = row_to_del['real_id']
+                        no_spk = row_to_del['Nomor SPK']
+                        j_pek = row_to_del['Jenis Pekerjaan']
+                        
+                        # Hapus dari database laporan & master
+                        cursor.execute("DELETE FROM laporan_mingguan WHERE id = ?", (real_id,))
+                        cursor.execute("DELETE FROM master_spk WHERE no_spk = ? AND jenis_pekerjaan = ?", (no_spk, j_pek))
+                    conn.commit()
+                st.success("✅ Data yang dicentang/dihapus berhasil dibersihkan dari database!")
+                st.rerun()
+
+        # Tombol Simpan Perubahan Data (hanya muncul jika ada data)
+        if not df_data.empty:
             if st.button("💾 Simpan Perubahan Data", key=f"btn_save_{tab_key_prefix}"):
                 with get_db_connection() as conn:
                     cursor = conn.cursor()
                     for idx, row in edited_df.iterrows():
-                        real_id = df_data.iloc[idx]['real_id']
-                        if pd.notna(real_id):
-                            cursor.execute("""
-                                UPDATE laporan_mingguan
-                                SET progress_minggu_ini = ?, catatan = ?
-                                WHERE id = ?
-                            """, (row.get('Progress Minggu Ini (%)'), row.get('Catatan Pekerjaan Terbaru'), real_id))
+                        if idx < len(df_data):
+                            real_id = df_data.iloc[idx]['real_id']
+                            if pd.notna(real_id):
+                                cursor.execute("""
+                                    UPDATE laporan_mingguan
+                                    SET progress_minggu_ini = ?, catatan = ?
+                                    WHERE id = ?
+                                """, (row.get('Progress Minggu Ini (%)'), row.get('Catatan Pekerjaan Terbaru'), real_id))
                     conn.commit()
                 st.success("Perubahan data berhasil disimpan!")
                 st.rerun()
 
-        # --- FITUR HAPUS PERMANEN PEKERJAAN DARI DASHBOARD + MASTER ---
-        with col_del:
-            spk_list = df_data[['Nomor SPK', 'Jenis Pekerjaan', 'real_id']].copy()
-            options_del = ["-- Pilih Pekerjaan yang Ingin Dihapus --"] + [
-                f"SPK: {r['Nomor SPK']} | {r['Jenis Pekerjaan']}" for _, r in spk_list.iterrows()
-            ]
-            selected_del = st.selectbox("Hapus Pekerjaan Permanen:", options_del, key=f"sel_del_{tab_key_prefix}")
-            
-            if st.button("🗑️ Hapus Pekerjaan Dipilih", key=f"btn_del_job_{tab_key_prefix}", type="primary"):
-                if selected_del != "-- Pilih Pekerjaan yang Ingin Dihapus --":
-                    idx_pilihan = options_del.index(selected_del) - 1
-                    target_row = spk_list.iloc[idx_pilihan]
-                    
-                    with get_db_connection() as conn:
-                        cursor = conn.cursor()
-                        # Hapus dari laporan_mingguan
-                        cursor.execute("DELETE FROM laporan_mingguan WHERE id = ?", (target_row['real_id'],))
-                        # Hapus juga dari master_spk agar tidak muncul lagi
-                        cursor.execute("DELETE FROM master_spk WHERE no_spk = ? AND jenis_pekerjaan = ?", 
-                                       (target_row['Nomor SPK'], target_row['Jenis Pekerjaan']))
-                        conn.commit()
-                    st.success(f"Pekerjaan {target_row['Jenis Pekerjaan']} ({target_row['Nomor SPK']}) berhasil dihapus permanen!")
-                    st.rerun()
-
-        st.markdown("---")
-        st.subheader("📥 Export & Download Laporan")
-        try:
-            excel_bytes = generate_excel_full_feature(df_display)
-            st.download_button(
-                label=f"📥 Download Laporan ({tab_key_prefix.capitalize()}) - Excel",
-                data=excel_bytes,
-                file_name=f"Laporan_Progress_{tab_key_prefix}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"dl_{tab_key_prefix}"
-            )
-        except Exception as e:
-            st.error(f"Gagal memproses file Excel: {e}")
+            st.markdown("---")
+            st.subheader("📥 Export & Download Laporan")
+            try:
+                excel_bytes = generate_excel_full_feature(df_display)
+                st.download_button(
+                    label=f"📥 Download Laporan ({tab_key_prefix.capitalize()}) - Excel",
+                    data=excel_bytes,
+                    file_name=f"Laporan_Progress_{tab_key_prefix}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"dl_{tab_key_prefix}"
+                )
+            except Exception as e:
+                st.error(f"Gagal memproses file Excel: {e}")
 
     # --- TAB BANGKA ---
     with tab_bangka:
