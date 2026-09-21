@@ -9,6 +9,17 @@ import re # Digunakan untuk sanitasi nama file
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
+# --- LIBRARY UNTUK MEMPROSES GAMBAR (WAJIB INSTAL PILImage) ---
+# Perintah instalasi: pip install Pillow
+try:
+    from PIL import Image as PILImage
+    from openpyxl.drawing.image import Image as OpenPyXLImage
+    has_pil = True
+except ImportError:
+    st.error("⚠️ Library 'Pillow' belum terinstal. Gambar fisik tidak akan muncul di Excel. Silakan instal dengan perintah: pip install Pillow")
+    has_pil = False
+# --------------------------------------------------------------
+
 # Konfigurasi Halaman Streamlit
 st.set_page_config(page_title="Sistem Progress Proyek", layout="wide")
 
@@ -50,8 +61,11 @@ if not st.session_state["authenticated"]:
 def sanitize_filename(filename):
     return re.sub(r'[\\/*?:"<>|]', "", filename).replace(" ", "_")
 
+def get_db_connection():
+    return sqlite3.connect('proyek_v2.db')
+
 def init_db():
-    conn = sqlite3.connect('proyek_v2.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     # 1. TABEL MASTER_SPK
@@ -125,6 +139,128 @@ def init_db():
 
 conn = init_db()
 
+# ==========================================
+# FUNGSI EXPORT EXCEL (2 SHEET + LINK + FOTO)
+# ==========================================
+def generate_excel_full_feature(df):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        # ---------------------------------------------------------
+        # Persiapan Data
+        # ---------------------------------------------------------
+        df_excel = df.drop(columns=['real_id'], errors='ignore').copy()
+        
+        # Lembar Utama (Laporan Progress) - Hanya Data Teks
+        df_progress = df_excel.drop(columns=['Foto 1', 'Foto 2'], errors='ignore')
+        df_progress.to_excel(writer, index=False, sheet_name='Laporan Progress')
+        
+        worksheet_progress = writer.sheets['Laporan Progress']
+        
+        # Lembar Kedua (Foto Dokumentasi) - Layout Khusus Gambar
+        workbook = writer.book
+        worksheet_foto = workbook.create_sheet(title='Foto Dokumentasi')
+        
+        # ---------------------------------------------------------
+        # Styling & Hyperlink Internal (Sheet Progress)
+        # ---------------------------------------------------------
+        header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+        header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        border_standard = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+        align_center = Alignment(horizontal="center", vertical="center")
+        blue_link_font = Font(color="0000FF", underline="single")
+
+        # Format Header Sheet Progress
+        for col_num in range(1, worksheet_progress.max_column + 1):
+            cell = worksheet_progress.cell(row=1, column=col_num)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = border_standard
+
+        # Format Sel Data & Auto-adjust lebar kolom (Sheet Progress)
+        for row_idx in range(2, worksheet_progress.max_row + 1):
+            for col_idx in range(1, worksheet_progress.max_column + 1):
+                cell = worksheet_progress.cell(row=row_idx, column=col_idx)
+                cell.border = border_standard
+                cell.alignment = Alignment(vertical="center")
+
+        for col in worksheet_progress.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            worksheet_progress.column_dimensions[get_column_letter(col[0].column)].width = max(max_len + 3, 12)
+
+        # ---------------------------------------------------------
+        # Layout & Penyisipan Gambar Visual (Sheet Foto Dokumentasi)
+        # ---------------------------------------------------------
+        # Set Lebar Kolom: A(Judul), B(Foto 1), C(Foto 2)
+        worksheet_foto.column_dimensions['A'].width = 40
+        worksheet_foto.column_dimensions['B'].width = 50
+        worksheet_foto.column_dimensions['C'].width = 50
+
+        # Header Sheet Foto
+        headers_foto = ["Jenis Pekerjaan / SPK", "Visual Foto Dokumentasi 1", "Visual Foto Dokumentasi 2"]
+        for col_num, header_text in enumerate(headers_foto, 1):
+            cell_h = worksheet_foto.cell(row=1, column=col_num, value=header_text)
+            cell_h.fill = header_fill
+            cell_h.font = header_font
+            cell_h.alignment = align_center
+            cell_h.border = border_standard
+
+        # Loop data untuk menyisipkan gambar fisik
+        foto_row_idx = 2
+        
+        for index, row in df_excel.iterrows():
+            # 1. Judul Pekerjaan (Kolom A)
+            judul_gabungan = f"SPK: {row['Nomor SPK']}\n\nPekerjaan: {row['Jenis Pekerjaan']}"
+            cell_j = worksheet_foto.cell(row=foto_row_idx, column=1, value=judul_gabungan)
+            cell_j.alignment = Alignment(wrap_text=True, vertical="center", horizontal="left")
+            cell_j.border = border_standard
+            
+            # Set Tinggi Baris agar gambar muat (misal 250pt)
+            worksheet_foto.row_dimensions[foto_row_idx].height = 250
+
+            # Fungsi Helper untuk menyisipkan satu gambar
+            def insert_image_visual(path, ws, current_row, current_col):
+                cell_p = ws.cell(row=current_row, column=current_col)
+                cell_p.border = border_standard
+                
+                if path and os.path.exists(str(path)) and has_pil:
+                    try:
+                        # Resize proporsional: set tinggi 300px, lebar menyesuaikan
+                        pil_img = PILImage.open(path)
+                        orig_w, orig_h = pil_img.size
+                        target_h = 300
+                        target_w = int(target_h * orig_w / orig_h)
+                        
+                        pil_img_resized = pil_img.resize((target_w, target_h), PILImage.Resampling.LANCZOS)
+                        
+                        img_buffer = io.BytesIO()
+                        # Simpan format asli jika memungkinkan, default JPEG
+                        img_format = pil_img.format if pil_img.format else 'JPEG'
+                        pil_img_resized.save(img_buffer, format=img_format)
+                        img_buffer.seek(0)
+                        
+                        opx_img = OpenPyXLImage(img_buffer)
+                        # Hitung kolom Excel (B=2, C=3)
+                        col_letter = get_column_letter(current_col)
+                        ws.add_image(opx_img, f'{col_letter}{current_row}')
+                        
+                    except Exception as e:
+                        cell_p.value = f"Eror load gambar: {e}"
+                        cell_p.alignment = align_center
+                else:
+                    cell_p.value = "Foto tidak tersedia / Library Pillow belum diinstal"
+                    cell_p.alignment = align_center
+
+            # 2. Sisipkan Foto 1 (Kolom B = 2)
+            insert_image_visual(row['Foto 1'], worksheet_foto, foto_row_idx, 2)
+            
+            # 3. Sisipkan Foto 2 (Kolom C = 3)
+            insert_image_visual(row['Foto 2'], worksheet_foto, foto_row_idx, 3)
+
+            foto_row_idx += 1
+
+    return output.getvalue()
+
 # ---------------------------------------------------------
 # NAVIGASI SIDEBAR
 # ---------------------------------------------------------
@@ -169,10 +305,11 @@ if menu == "Dashboard Progress":
             ORDER BY id ASC
         """
 
-        try:
-            df_view = pd.read_sql_query(query_view, conn)
-        except Exception:
-            df_view = pd.DataFrame()
+        with get_db_connection() as conn:
+            try:
+                df_view = pd.read_sql_query(query_view, conn)
+            except Exception:
+                df_view = pd.DataFrame()
 
         if df_view.empty:
             st.info("💡 Belum ada data progress terkini. Silakan input progress mingguan.")
@@ -187,51 +324,52 @@ if menu == "Dashboard Progress":
                 hide_index=True,
                 column_config={
                     "real_id": None,
-                    "Foto 1": st.column_config.ImageColumn("Dokumentasi 1", help="Foto dokumentasi 1"),
-                    "Foto 2": st.column_config.ImageColumn("Dokumentasi 2", help="Foto dokumentasi 2")
+                    "Foto 1": st.column_config.ImageColumn("Pratinjau Foto 1", help="Foto dokumentasi 1"),
+                    "Foto 2": st.column_config.ImageColumn("Pratinjau Foto 2", help="Foto dokumentasi 2")
                 },
                 key="editor_dashboard"
             )
 
             if st.button("💾 Simpan Perubahan & Hapus Data"):
-                cursor = conn.cursor()
-                current_ids = [row['real_id'] for idx, row in edited_df.iterrows() if pd.notna(row.get('real_id'))]
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    current_ids = [row['real_id'] for idx, row in edited_df.iterrows() if pd.notna(row.get('real_id'))]
 
-                if current_ids:
-                    format_strings = ','.join(['?'] * len(current_ids))
-                    cursor.execute(f"DELETE FROM laporan_mingguan WHERE id NOT IN ({format_strings})", current_ids)
-                else:
-                    cursor.execute("DELETE FROM laporan_mingguan")
+                    if current_ids:
+                        format_strings = ','.join(['?'] * len(current_ids))
+                        cursor.execute(f"DELETE FROM laporan_mingguan WHERE id NOT IN ({format_strings})", current_ids)
+                    else:
+                        cursor.execute("DELETE FROM laporan_mingguan")
 
-                for idx, row in edited_df.iterrows():
-                    real_id = row.get('real_id')
-                    if pd.notna(real_id) and real_id != "":
-                        cursor.execute("""
-                            UPDATE laporan_mingguan
-                            SET no_spk = ?,
-                                kontraktor = ?,
-                                jenis_pekerjaan = ?,
-                                unit = ?,
-                                jumlah = ?,
-                                nilai_pekerjaan = ?,
-                                progress_minggu_lalu = ?,
-                                progress_minggu_ini = ?,
-                                catatan = ?
-                            WHERE id = ?
-                        """, (
-                            row.get('Nomor SPK'),
-                            row.get('Nama Kontraktor'),
-                            row.get('Jenis Pekerjaan'),
-                            row.get('Unit Proyek'),
-                            row.get('Jumlah'),
-                            row.get('Nilai Kontrak Pekerjaan Ini (Rp)'),
-                            row.get('Progress Minggu Lalu (%)'),
-                            row.get('Progress Minggu Ini (%)'),
-                            row.get('Catatan Pekerjaan Terbaru'),
-                            real_id
-                        ))
+                    for idx, row in edited_df.iterrows():
+                        real_id = row.get('real_id')
+                        if pd.notna(real_id) and real_id != "":
+                            cursor.execute("""
+                                UPDATE laporan_mingguan
+                                SET no_spk = ?,
+                                    kontraktor = ?,
+                                    jenis_pekerjaan = ?,
+                                    unit = ?,
+                                    jumlah = ?,
+                                    nilai_pekerjaan = ?,
+                                    progress_minggu_lalu = ?,
+                                    progress_minggu_ini = ?,
+                                    catatan = ?
+                                WHERE id = ?
+                            """, (
+                                row.get('Nomor SPK'),
+                                row.get('Nama Kontraktor'),
+                                row.get('Jenis Pekerjaan'),
+                                row.get('Unit Proyek'),
+                                row.get('Jumlah'),
+                                row.get('Nilai Kontrak Pekerjaan Ini (Rp)'),
+                                row.get('Progress Minggu Lalu (%)'),
+                                row.get('Progress Minggu Ini (%)'),
+                                row.get('Catatan Pekerjaan Terbaru'),
+                                real_id
+                            ))
 
-                conn.commit()
+                    conn.commit()
                 st.success("Perubahan data berhasil disimpan!")
                 st.rerun()
 
@@ -240,82 +378,14 @@ if menu == "Dashboard Progress":
             # ---------------------------------------------------------
             st.markdown("---")
             st.subheader("📥 Export & Download Laporan")
-
-            def generate_excel():
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    # Mengabaikan kolom real_id untuk ekspor
-                    df_excel = df_view.drop(columns=['real_id'], errors='ignore')
-                    
-                    # Logika Pemendekan Tautan Foto untuk Lembar Utama
-                    for col_foto in ['Foto 1', 'Foto 2']:
-                        if col_foto in df_excel.columns:
-                            # Terapkan fungsi map: jika ada path foto, ganti jadi "Lihat Foto", jika tidak, biarkan
-                            df_excel[col_foto] = df_excel[col_foto].map(
-                                lambda x: f'=HYPERLINK("{x}", "Lihat Foto")' if pd.notna(x) and x != "" else ""
-                            )
-                    
-                    df_excel.to_excel(writer, index=False, sheet_name='Laporan Progress')
-                    
-                    worksheet = writer.sheets['Laporan Progress']
-                    
-                    # Style Header (Warna Biru Tua + Teks Putih Tebal)
-                    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
-                    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-                    
-                    # Border Hitam Tipis
-                    thin_border = Border(
-                        left=Side(style='thin', color='000000'),
-                        right=Side(style='thin', color='000000'),
-                        top=Side(style='thin', color='000000'),
-                        bottom=Side(style='thin', color='000000')
-                    )
-
-                    # Format Sel Header
-                    for col_num in range(1, len(df_excel.columns) + 1):
-                        cell = worksheet.cell(row=1, column=col_num)
-                        cell.fill = header_fill
-                        cell.font = header_font
-                        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-                        cell.border = thin_border
-
-                    # Style untuk link (Biru, Garis Bawah)
-                    link_font = Font(color="0000FF", underline="single")
-
-                    # Format Sel Data (Border + Alignment)
-                    for row_idx in range(2, len(df_excel) + 2):
-                        for col_idx in range(1, len(df_excel.columns) + 1):
-                            cell = worksheet.cell(row=row_idx, column=col_idx)
-                            cell.border = thin_border
-                            cell.alignment = Alignment(vertical="center")
-                            
-                            # Terapkan styling link untuk kolom foto
-                            header_value = worksheet.cell(row=1, column=col_idx).value
-                            if header_value in ['Foto 1', 'Foto 2'] and cell.value and cell.value.startswith("=HYPERLINK"):
-                                cell.font = link_font
-                                cell.alignment = Alignment(horizontal="center", vertical="center")
-
-
-                    # Penyesuaian Lebar Kolom Otomatis
-                    for col in worksheet.columns:
-                        # Jangan adjust otomatis untuk kolom foto karena isinya formula panjang
-                        if col[0].value not in ['Foto 1', 'Foto 2']:
-                            max_len = max(len(str(cell.value or '')) for cell in col)
-                            col_letter = get_column_letter(col[0].column)
-                            worksheet.column_dimensions[col_letter].width = max(max_len + 3, 12)
-                        else:
-                            # Set lebar fix untuk kolom foto
-                            col_letter = get_column_letter(col[0].column)
-                            worksheet.column_dimensions[col_letter].width = 15
-
-                return output.getvalue()
+            st.info("File Excel akan berisi 2 Sheet: Sheet 1 (Data Teks) dan Sheet 2 (Visual Foto).")
 
             try:
-                excel_data = generate_excel()
+                excel_bytes = generate_excel_full_feature(df_view)
                 st.download_button(
                     label="📥 Download Laporan (Excel)",
-                    data=excel_data,
-                    file_name="Laporan_Progress_Proyek.xlsx",
+                    data=excel_bytes,
+                    file_name="Laporan_Progress_dan_Foto.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
             except Exception as e:
@@ -339,10 +409,11 @@ if menu == "Dashboard Progress":
             FROM history_progress
             ORDER BY id DESC
         """
-        try:
-            df_history = pd.read_sql_query(query_history, conn)
-        except Exception:
-            df_history = pd.DataFrame()
+        with get_db_connection() as conn:
+            try:
+                df_history = pd.read_sql_query(query_history, conn)
+            except Exception:
+                df_history = pd.DataFrame()
 
         if df_history.empty:
             st.info("💡 Belum ada riwayat update progress.")
@@ -390,36 +461,38 @@ elif menu == "Kelola Master SPK":
             if not no_spk or not jenis_pekerjaan or not kontraktor:
                 st.warning("Nomor SPK, Nama Kontraktor, dan Jenis Pekerjaan wajib diisi.")
             else:
-                try:
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                        INSERT INTO master_spk (no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_pekerjaan)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_pekerjaan))
-                    conn.commit()
-                    st.success(f"✅ Item '{jenis_pekerjaan}' berhasil ditambahkan ke SPK '{no_spk}'!")
-                    st.rerun()
-                except sqlite3.IntegrityError:
-                    st.error("⚠️ Jenis pekerjaan ini sudah ada di dalam SPK tersebut!")
+                with get_db_connection() as conn:
+                    try:
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            INSERT INTO master_spk (no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_pekerjaan)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_pekerjaan))
+                        conn.commit()
+                        st.success(f"✅ Item '{jenis_pekerjaan}' berhasil ditambahkan ke SPK '{no_spk}'!")
+                        st.rerun()
+                    except sqlite3.IntegrityError:
+                        st.error("⚠️ Jenis pekerjaan ini sudah ada di dalam SPK tersebut!")
 
     st.markdown("---")
     st.subheader("📋 Edit & Kelola Master SPK")
 
-    try:
-        df_master = pd.read_sql_query("""
-            SELECT 
-                id AS real_id,
-                no_spk AS [Nomor SPK], 
-                kontraktor AS [Nama Kontraktor], 
-                jenis_pekerjaan AS [Jenis Pekerjaan], 
-                unit AS [Unit Proyek], 
-                jumlah AS [Jumlah],
-                nilai_pekerjaan AS [Nilai Kontrak Pekerjaan Ini (Rp)]
-            FROM master_spk 
-            ORDER BY id ASC
-        """, conn)
-    except Exception:
-        df_master = pd.DataFrame()
+    with get_db_connection() as conn:
+        try:
+            df_master = pd.read_sql_query("""
+                SELECT 
+                    id AS real_id,
+                    no_spk AS [Nomor SPK], 
+                    kontraktor AS [Nama Kontraktor], 
+                    jenis_pekerjaan AS [Jenis Pekerjaan], 
+                    unit AS [Unit Proyek], 
+                    jumlah AS [Jumlah],
+                    nilai_pekerjaan AS [Nilai Kontrak Pekerjaan Ini (Rp)]
+                FROM master_spk 
+                ORDER BY id ASC
+            """, conn)
+        except Exception:
+            df_master = pd.DataFrame()
 
     if not df_master.empty:
         spk_totals = df_master.groupby('Nomor SPK')['Nilai Kontrak Pekerjaan Ini (Rp)'].transform('sum')
@@ -439,27 +512,28 @@ elif menu == "Kelola Master SPK":
     )
 
     if st.button("💾 Simpan Perubahan Master SPK"):
-        cursor = conn.cursor()
-        current_ids = [row['real_id'] for idx, row in edited_master.iterrows() if pd.notna(row.get('real_id'))]
-        if current_ids:
-            format_strings = ','.join(['?'] * len(current_ids))
-            cursor.execute(f"DELETE FROM master_spk WHERE id NOT IN ({format_strings})", current_ids)
-        else:
-            cursor.execute("DELETE FROM master_spk")
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            current_ids = [row['real_id'] for idx, row in edited_master.iterrows() if pd.notna(row.get('real_id'))]
+            if current_ids:
+                format_strings = ','.join(['?'] * len(current_ids))
+                cursor.execute(f"DELETE FROM master_spk WHERE id NOT IN ({format_strings})", current_ids)
+            else:
+                cursor.execute("DELETE FROM master_spk")
 
-        for idx, row in edited_master.iterrows():
-            real_id = row.get('real_id')
-            if pd.notna(real_id) and real_id != "":
-                cursor.execute("""
-                    UPDATE master_spk
-                    SET no_spk = ?, kontraktor = ?, jenis_pekerjaan = ?, unit = ?, jumlah = ?, nilai_pekerjaan = ?
-                    WHERE id = ?
-                """, (
-                    row.get('Nomor SPK'), row.get('Nama Kontraktor'), row.get('Jenis Pekerjaan'),
-                    row.get('Unit Proyek'), row.get('Jumlah'), row.get('Nilai Kontrak Pekerjaan Ini (Rp)'), real_id
-                ))
+            for idx, row in edited_master.iterrows():
+                real_id = row.get('real_id')
+                if pd.notna(real_id) and real_id != "":
+                    cursor.execute("""
+                        UPDATE master_spk
+                        SET no_spk = ?, kontraktor = ?, jenis_pekerjaan = ?, unit = ?, jumlah = ?, nilai_pekerjaan = ?
+                        WHERE id = ?
+                    """, (
+                        row.get('Nomor SPK'), row.get('Nama Kontraktor'), row.get('Jenis Pekerjaan'),
+                        row.get('Unit Proyek'), row.get('Jumlah'), row.get('Nilai Kontrak Pekerjaan Ini (Rp)'), real_id
+                    ))
 
-        conn.commit()
+            conn.commit()
         st.success("✅ Master SPK berhasil diperbarui!")
         st.rerun()
 
@@ -469,10 +543,11 @@ elif menu == "Kelola Master SPK":
 elif menu == "Input Progress Mingguan":
     st.title("📝 Input Progress Mingguan Berdasarkan SPK")
 
-    try:
-        spk_list = pd.read_sql_query("SELECT DISTINCT no_spk FROM master_spk", conn)['no_spk'].tolist()
-    except Exception:
-        spk_list = []
+    with get_db_connection() as conn:
+        try:
+            spk_list = pd.read_sql_query("SELECT DISTINCT no_spk FROM master_spk", conn)['no_spk'].tolist()
+        except Exception:
+            spk_list = []
 
     if not spk_list:
         st.warning("⚠️ Belum ada data Master SPK. Harap daftarkan SPK di menu 'Kelola Master SPK' terlebih dahulu.")
@@ -482,20 +557,22 @@ elif menu == "Input Progress Mingguan":
         with col_spk:
             selected_spk = st.selectbox("Pilih Nomor SPK", spk_list)
 
-        job_list = pd.read_sql_query(
-            "SELECT jenis_pekerjaan FROM master_spk WHERE no_spk = ?", 
-            conn, 
-            params=(selected_spk,)
-        )['jenis_pekerjaan'].tolist()
+        with get_db_connection() as conn:
+            job_list = pd.read_sql_query(
+                "SELECT jenis_pekerjaan FROM master_spk WHERE no_spk = ?", 
+                conn, 
+                params=(selected_spk,)
+            )['jenis_pekerjaan'].tolist()
 
         with col_job:
             selected_job = st.selectbox("Pilih Jenis Pekerjaan", job_list)
 
-        spk_detail = pd.read_sql_query(
-            "SELECT * FROM master_spk WHERE no_spk = ? AND jenis_pekerjaan = ?", 
-            conn, 
-            params=(selected_spk, selected_job)
-        ).iloc[0]
+        with get_db_connection() as conn:
+            spk_detail = pd.read_sql_query(
+                "SELECT * FROM master_spk WHERE no_spk = ? AND jenis_pekerjaan = ?", 
+                conn, 
+                params=(selected_spk, selected_job)
+            ).iloc[0]
 
         default_progress_lalu = 0.0
         default_progress_ini = 0.0
@@ -504,130 +581,167 @@ elif menu == "Input Progress Mingguan":
         existing_foto_2 = None
         already_exists = False
 
-        try:
-            existing_df = pd.read_sql_query(
-                "SELECT progress_minggu_ini, catatan, foto_1, foto_2 FROM laporan_mingguan WHERE no_spk = ? AND jenis_pekerjaan = ?", 
-                conn, 
-                params=(selected_spk, selected_job)
-            )
-            if not existing_df.empty:
-                already_exists = True
-                last_progress = float(existing_df.iloc[0]['progress_minggu_ini'] or 0.0)
-                default_progress_lalu = last_progress
-                default_progress_ini = last_progress
-                default_catatan = str(existing_df.iloc[0]['catatan'] or "")
-                existing_foto_1 = existing_df.iloc[0]['foto_1']
-                existing_foto_2 = existing_df.iloc[0]['foto_2']
-        except Exception:
-            pass
+        with get_db_connection() as conn:
+            try:
+                existing_df = pd.read_sql_query(
+                    "SELECT progress_minggu_ini, catatan, foto_1, foto_2 FROM laporan_mingguan WHERE no_spk = ? AND jenis_pekerjaan = ?", 
+                    conn, 
+                    params=(selected_spk, selected_job)
+                )
+                if not existing_df.empty:
+                    already_exists = True
+                    last_progress = float(existing_df.iloc[0]['progress_minggu_ini'] or 0.0)
+                    default_progress_lalu = last_progress
+                    default_progress_ini = last_progress
+                    default_catatan = str(existing_df.iloc[0]['catatan'] or "")
+                    existing_foto_1 = existing_df.iloc[0]['foto_1']
+                    existing_foto_2 = existing_df.iloc[0]['foto_2']
+            except Exception:
+                pass
 
         nilai_peks = spk_detail['nilai_pekerjaan'] if pd.notna(spk_detail['nilai_pekerjaan']) else 0.0
-        st.info(f"📌 **Detail:** {spk_detail['kontraktor']} | Unit: **{spk_detail['unit']}Menanggapi kekhawatiran Anda, saya mengerti bahwa data yang sudah ada sangat penting. Kode yang saya berikan sebelumnya memang melakukan restrukturisasi besar-besaran (termasuk skema database) untuk memenuhi permintaan "layout dua kolom dengan gambar visual" di Excel.
+        st.info(f"📌 **Detail:** {spk_detail['kontraktor']} | Unit: **{spk_detail['unit']}** | Jumlah: **{spk_detail['jumlah']}** | Nilai Pekerjaan: **Rp {nilai_peks:,.2f}**")
 
-Jika prioritas Anda adalah **menjaga data yang sudah ada agar tidak berubah sama sekali**, kita harus menggunakan pendekatan yang **lebih aman**.
+        # Menampilkan foto terkini jika sudah pernah diunggah
+        if existing_foto_1 or existing_foto_2:
+            st.markdown("**📸 Foto Dokumentasi Minggu Lalu/Terkini:**")
+            img_col1, img_col2 = st.columns(2)
+            with img_col1:
+                if existing_foto_1 and os.path.exists(str(existing_foto_1)):
+                    st.image(existing_foto_1, caption="Dokumentasi 1", use_container_width=True)
+            with img_col2:
+                if existing_foto_2 and os.path.exists(str(existing_foto_2)):
+                    st.image(existing_foto_2, caption="Dokumentasi 2", use_container_width=True)
 
-### Solusi Tengah (Keamanan Data + Fitur Excel)
+        with st.form("form_update_progress_mingguan"):
+            col1, col2 = st.columns(2)
 
-Kita akan menggunakan kode versi Anda sebagai dasar, dan hanya melakukan perubahan minimal pada fungsi `generate_excel` di Bagian "DASHBOARD PROGRESS".
+            with col1:
+                st.text_input("Nama Kontraktor", value=spk_detail['kontraktor'], disabled=True)
+                st.text_input("Unit Proyek", value=spk_detail['unit'], disabled=True)
+                st.number_input("Jumlah", value=int(spk_detail['jumlah']), disabled=True)
+                st.number_input("Nilai Pekerjaan (Rp)", value=float(nilai_peks), disabled=True)
 
-Perubahan ini **hanya** akan mempengaruhi file Excel yang didownload:
-1.  **Pemendekan Tautan**: Tautan fisik yang panjang di lembar utama Excel akan diganti menjadi teks klik "**Lihat Foto**" menggunakan formula `=HYPERLINK()`. Ini membuat lembar utama rapi[cite: 4].
-2.  **Gambar Visual Tidak Memungkinkan Tanpa Restrukturisasi**: Menampilkan gambar visual (JPG/PNG) secara langsung di dalam sel Excel (seperti Thumbnail) membutuhkan library tambahan (`Pillow`) dan restrukturisasi kode yang signifikan. Pendekatan ini berisiko merusak logika database Anda jika tidak dilakukan dengan sangat hati-hati.
+                st.subheader("📷 Update Foto Dokumentasi Minggu Ini")
+                file_foto_1 = st.file_uploader("Upload Foto Dokumentasi 1", type=['jpg', 'jpeg', 'png'], key="up_foto_1")
+                file_foto_2 = st.file_uploader("Upload Foto Dokumentasi 2", type=['jpg', 'jpeg', 'png'], key="up_foto_2")
 
-Oleh karena itu, kode di bawah ini adalah solusi **paling aman** untuk memenuhi permintaan Anda menjaga data tetap utuh, sambil memberikan fitur tautan interaktif yang rapi di Excel.
+            with col2:
+                prog_lalu = st.number_input(
+                    "Progress Minggu Lalu (%) [Otomatis]", 
+                    value=default_progress_lalu, 
+                    min_value=0.0, 
+                    max_value=100.0,
+                    disabled=True
+                )
+                
+                prog_ini = st.number_input(
+                    "Progress Minggu Ini (%)", 
+                    value=default_progress_ini, 
+                    min_value=0.0, 
+                    max_value=100.0, 
+                    step=0.1
+                )
+                
+                catatan = st.text_area("Catatan Pekerjaan Minggu Ini", value=default_catatan, placeholder="Masukkan kendala / progres pekerjaan...")
 
-### Langkah Perbaikan Kode `app.py` Anda
+            submit_progress = st.form_submit_button("💾 Simpan Progress & Foto Minggu Ini")
 
-Silakan buka file `app.py` Anda, temukan fungsi `generate_excel()` di dalam blok `if menu == "Dashboard Progress":`, dan gantikan seluruh fungsi tersebut dengan kode berikut.
+            if submit_progress:
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    penambahan = float(prog_ini) - float(prog_lalu)
 
-*(Catatan: Pastikan Anda menambahkan `import re` di bagian paling atas file Anda, di bawah `import streamlit as st`)*[cite: 3].
+                    path_foto_1 = existing_foto_1
+                    path_foto_2 = existing_foto_2
 
-```python
-# --- TAMBAHKAN IMPORT INI DI BAGIAN ATAS FILE (DI BAWAH IMPORT pandas) ---
-import re 
-# ------------------------------------------------------------------------
+                    # Sanitasi nama untuk keamanan file system
+                    spk_clean = sanitize_filename(selected_spk)
+                    job_clean = sanitize_filename(selected_job)
 
-# ... (Kode autentikasi dan database Anda tetap sama) ...
+                    # Simpan Foto 1 jika di-upload baru
+                    if file_foto_1 is not None:
+                        # Buat nama file unik dengan timestamp
+                        import time
+                        timestamp = int(time.time())
+                        path_foto_1 = os.path.join(UPLOAD_DIR, f"{spk_clean}_{job_clean}_f1_{timestamp}.jpg")
+                        with open(path_foto_1, "wb") as f:
+                            f.write(file_foto_1.getbuffer())
 
-# ---------------------------------------------------------
-# MENU 1: DASHBOARD PROGRESS & HISTORY (BAGIAN EXPORT)
-# ---------------------------------------------------------
-if menu == "Dashboard Progress":
-    # ... (Kode tab dan data_editor Anda tetap sama) ...
-    
-    # --- TEMUKAN BLOK EXPORT INI DAN GANTI FUNGSINYA ---
-            # ---------------------------------------------------------
-            # EXPORT DATA KE EXCEL (STYLING OPENPYXL)
-            # ---------------------------------------------------------
-            st.markdown("---")
-            st.subheader("📥 Export & Download Laporan")
+                    # Simpan Foto 2 jika di-upload baru
+                    if file_foto_2 is not None:
+                        import time
+                        timestamp = int(time.time())
+                        path_foto_2 = os.path.join(UPLOAD_DIR, f"{spk_clean}_{job_clean}_f2_{timestamp}.jpg")
+                        with open(path_foto_2, "wb") as f:
+                            f.write(file_foto_2.getbuffer())
 
-            def generate_excel():
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    # Mengabaikan kolom real_id untuk ekspor
-                    df_excel = df_view.drop(columns=['real_id'], errors='ignore').copy()
-                    
-                    # Logika Pemendekan Tautan Foto untuk Lembar Utama Excel
-                    # Ini hanya mengubah visual di Excel, bukan data di DB
-                    for col_foto in ['Foto 1', 'Foto 2']:
-                        if col_foto in df_excel.columns:
-                            # Gunakan formula HYPERLINK untuk memendekkan teks yang diklik
-                            df_excel[col_foto] = df_excel[col_foto].map(
-                                lambda x: f'=HYPERLINK("{x}", "Lihat Foto")' if pd.notna(x) and x != "" else ""
-                            )
-                    
-                    df_excel.to_excel(writer, index=False, sheet_name='Laporan Progress')
-                    
-                    worksheet = writer.sheets['Laporan Progress']
-                    
-                    # Style Header (Warna Biru Tua + Teks Putih Tebal)
-                    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
-                    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-                    
-                    # Border Hitam Tipis
-                    thin_border = Border(
-                        left=Side(style='thin', color='000000'),
-                        right=Side(style='thin', color='000000'),
-                        top=Side(style='thin', color='000000'),
-                        bottom=Side(style='thin', color='000000')
-                    )
+                    if already_exists:
+                        cursor.execute("""
+                            UPDATE laporan_mingguan
+                            SET kontraktor = ?,
+                                unit = ?,
+                                jumlah = ?,
+                                nilai_pekerjaan = ?,
+                                progress_minggu_lalu = ?,
+                                progress_minggu_ini = ?,
+                                catatan = ?,
+                                foto_1 = ?,
+                                foto_2 = ?,
+                                waktu_input = CURRENT_TIMESTAMP
+                            WHERE no_spk = ? AND jenis_pekerjaan = ?
+                        """, (
+                            str(spk_detail['kontraktor']),
+                            str(spk_detail['unit']),
+                            int(spk_detail['jumlah']),
+                            float(spk_detail['nilai_pekerjaan']),
+                            float(prog_lalu),
+                            float(prog_ini),
+                            str(catatan),
+                            path_foto_1,
+                            path_foto_2,
+                            selected_spk,
+                            str(selected_job)
+                        ))
+                    else:
+                        cursor.execute("""
+                            INSERT INTO laporan_mingguan (
+                                no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan,
+                                progress_minggu_lalu, progress_minggu_ini, catatan, foto_1, foto_2
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            selected_spk,
+                            str(selected_job),
+                            str(spk_detail['kontraktor']),
+                            str(spk_detail['unit']),
+                            int(spk_detail['jumlah']),
+                            float(spk_detail['nilai_pekerjaan']),
+                            float(prog_lalu),
+                            float(prog_ini),
+                            str(catatan),
+                            path_foto_1,
+                            path_foto_2
+                        ))
 
-                    # Format Sel Header
-                    for col_num in range(1, len(df_excel.columns) + 1):
-                        cell = worksheet.cell(row=1, column=col_num)
-                        cell.fill = header_fill
-                        cell.font = header_font
-                        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-                        cell.border = thin_border
+                    # Rekam ke History
+                    cursor.execute("""
+                        INSERT INTO history_progress (
+                            no_spk, jenis_pekerjaan, kontraktor, unit,
+                            progress_minggu_lalu, progress_minggu_ini, progres_penambahan, catatan, foto_1, foto_2
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        selected_spk,
+                        str(selected_job),
+                        str(spk_detail['kontraktor']),
+                        str(spk_detail['unit']),
+                        float(prog_lalu),
+                        float(prog_ini),
+                        float(penambahan),
+                        str(catatan),
+                        path_foto_1,
+                        path_foto_2
+                    ))
 
-                    # Style khusus untuk link (Biru, Garis Bawah)
-                    link_font = Font(color="0000FF", underline="single")
-
-                    # Format Sel Data (Border + Alignment)
-                    for row_idx in range(2, len(df_excel) + 2):
-                        for col_idx in range(1, len(df_excel.columns) + 1):
-                            cell = worksheet.cell(row=row_idx, column=col_idx)
-                            cell.border = thin_border
-                            cell.alignment = Alignment(vertical="center")
-                            
-                            # Terapkan styling link untuk kolom foto
-                            header_value = worksheet.cell(row=1, column=col_idx).value
-                            if header_value in ['Foto 1', 'Foto 2'] and cell.value and cell.value.startswith("=HYPERLINK"):
-                                cell.font = link_font
-                                cell.alignment = Alignment(horizontal="center", vertical="center")
-
-
-                    # Penyesuaian Lebar Kolom Otomatis (dengan pengecualian kolom link)
-                    for col in worksheet.columns:
-                        header_name = col[0].value
-                        if header_name not in ['Foto 1', 'Foto 2']:
-                            max_len = max(len(str(cell.value or '')) for cell in col)
-                            col_letter = get_column_letter(col[0].column)
-                            worksheet.column_dimensions[col_letter].width = max(max_len + 3, 12)
-                        else:
-                            # Set lebar fix yang rapi untuk kolom tautan
-                            col_letter = get_column_letter(col[0].column)
-                            worksheet.column_dimensions[col_letter].width = 15
-
-                return output.getvalue()
+                    conn.commit()
+                st.success(f"✅ Progress & Foto untuk '{selected_job}' BERHASIL DISIMPAN!")
+                st.rerun()
