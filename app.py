@@ -332,6 +332,7 @@ if menu == MENU_DASHBOARD:
         ]
         existing_cols = [c for c in column_order if c in df_display.columns]
 
+        # 1. Aktifkan num_rows="dynamic" agar fitur centang / hapus baris berfungsi di UI
         edited_df = st.data_editor(
             df_display[existing_cols],
             num_rows="dynamic",
@@ -350,20 +351,40 @@ if menu == MENU_DASHBOARD:
             key=f"editor_{tab_key_prefix}"
         )
 
-        # Tombol Simpan Perubahan Data saja (Bagian hapus sudah dihilangkan)
+        # 2. Proses penghapusan ke database saat tombol Simpan Perubahan Data diklik
         if st.button("💾 Simpan Perubahan Data", key=f"btn_save_{tab_key_prefix}"):
             with get_db_connection() as conn:
                 cursor = conn.cursor()
+                
+                # Ambil daftar ID asli yang tersisa di tabel setelah ada yang dihapus/dicentang
+                remaining_spks = edited_df['Nomor SPK'].tolist() if 'Nomor SPK' in edited_df.columns else []
+                
+                # Cari data yang terhapus dari tampilan (ada di df_data awal tapi tidak ada di edited_df)
+                deleted_rows = df_data[~df_data['Nomor SPK'].isin(remaining_spks)]
+                
+                # Hapus baris yang hilang tersebut dari Database (laporan_mingguan & master_spk)
+                for _, del_row in deleted_rows.iterrows():
+                    real_id = del_row['real_id']
+                    spk_no = del_row['Nomor SPK']
+                    jenis_pekerjaan = del_row['Jenis Pekerjaan']
+                    
+                    cursor.execute("DELETE FROM laporan_mingguan WHERE id = ?", (real_id,))
+                    cursor.execute("DELETE FROM master_spk WHERE no_spk = ? AND jenis_pekerjaan = ?", (spk_no, jenis_pekerjaan))
+                
+                # Update data untuk baris yang masih tersisa
                 for idx, row in edited_df.iterrows():
-                    real_id = df_data.iloc[idx]['real_id']
-                    if pd.notna(real_id):
+                    # Matching real_id dari dataframe asal
+                    match = df_data[df_data['Nomor SPK'] == row['Nomor SPK']]
+                    if not match.empty:
+                        real_id = match.iloc[0]['real_id']
                         cursor.execute("""
                             UPDATE laporan_mingguan
                             SET progress_minggu_ini = ?, catatan = ?
                             WHERE id = ?
                         """, (row.get('Progress Minggu Ini (%)'), row.get('Catatan Pekerjaan Terbaru'), real_id))
+                
                 conn.commit()
-            st.success("Perubahan data berhasil disimpan!")
+            st.success("Perubahan data dan penghapusan berhasil disimpan ke database!")
             st.rerun()
 
         st.markdown("---")
