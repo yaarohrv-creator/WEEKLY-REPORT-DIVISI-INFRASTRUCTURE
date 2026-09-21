@@ -1,10 +1,13 @@
 import streamlit as st
 import pandas as pd
 import openpyxl
-from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+from openpyxl.drawing.image import Image as OpenPyXLImage
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 import io
 import os
+from PIL import Image as PILImage
+from pathlib import Path
 
 # ==========================================
 # CONFIG & PAGE SETUP
@@ -15,223 +18,244 @@ st.set_page_config(
     layout="wide"
 )
 
-# Folder penyimpanan foto dokumentasi
-UPLOAD_DIR = "uploads_dokumentasi"
-if not os.path.exists(UPLOAD_DIR):
-    os.makedirs(UPLOAD_DIR)
+# Direktori utama foto
+BASE_UPLOAD_DIR = "uploads_dokumentasi"
+if not os.path.exists(BASE_UPLOAD_DIR):
+    os.makedirs(BASE_UPLOAD_DIR)
 
 # ==========================================
-# INISIALISASI SESSION STATE / DATASTORE
+# DATABASE SIMULATION (SESSION STATE)
 # ==========================================
 if "data_progress" not in st.session_state:
-    # Sample data awal
+    # Buat dummy data dengan path yang terstruktur berdasarkan Nama Pekerjaan
+    job_name_1 = "RENOVASI ATAP RUMAH G2 05"
+    
+    # Path folder khusus pekerjaan ini
+    job_folder_1 = f"{BASE_UPLOAD_DIR}/{job_name_1.replace(' ', '_')}"
+    if not os.path.exists(job_folder_1):
+        os.makedirs(job_folder_1)
+
+    # Path file foto (asumsi file dummy .jpg ada di folder tersebut untuk tes)
+    dummy_f1 = f"{job_folder_1}/Foto1_Sample.jpg"
+    dummy_f2 = f"{job_folder_1}/Foto2_Sample.jpg"
+    
+    # Buat file placeholder kosong jika belum ada (untuk simulasi)
+    if not os.path.exists(dummy_f1): Path(dummy_f1).touch()
+    if not os.path.exists(dummy_f2): Path(dummy_f2).touch()
+
     st.session_state["data_progress"] = pd.DataFrame([
         {
             "real_id": 1,
             "No": 1,
-            "Nomor SPK": "052/PSM/2BPRE/BPS/LIJKTO/INF/VII/2025",
-            "Nama Kontraktor": "PT Butun Bintana BPRE",
-            "Jenis Pekerjaan": "RENOVASI ATAP RUMAH G1 NO 02 TAHUN 1999 BUTUN",
-            "Unit Proyek": "Unit 1",
-            "Target Progress (%)": 100,
-            "Realizasi Progress (%)": 100,
-            "Selisih / Varian (%)": 0,
-            "Link Path Foto 1": f"{UPLOAD_DIR}/RENOVASI_ATAP_RUMAH_G1_NO_02_TAHUN_1999_BUTUN_BPRE_Foto1.jpg",
-            "Link Path Foto 2": f"{UPLOAD_DIR}/RENOVASI_ATAP_RUMAH_G1_NO_02_TAHUN_1999_BUTUN_BPRE_Foto2.jpg",
-            "Catatan Pekerjaan Terbaru": "Pekerjaan konstruksi atap telah selesai 100%."
+            "Nomor SPK": "001/SPK/INF/2026",
+            "Nama Pekerjaan": job_name_1,
+            "Target (%)": 100,
+            "Realisasi (%)": 85,
+            "Link Path Foto 1": dummy_f1,
+            "Link Path Foto 2": dummy_f2,
         }
     ])
 
 # ==========================================
-# FUNGSI GENERATE EXCEL DENGAN 2 SHEET
+# FUNGSI EXPORT EXCEL (2 SHEET + HYPERLINK TO IMAGE SHEET)
 # ==========================================
-def generate_excel(df):
+def generate_excel_with_image_links(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         # ---------------------------------------------------------
-        # SHEET 1: LAPORAN PROGRESS
+        # Persiapan Data
         # ---------------------------------------------------------
         df_excel = df.drop(columns=['real_id'], errors='ignore').copy()
+        
+        # ---------------------------------------------------------
+        # SHEET 2: FOTO DOKUMENTASI (LAYOUT SEPERTI CONTOH USER)
+        # ---------------------------------------------------------
+        # Buat sheet kosong
+        workbook = writer.book
+        worksheet2 = workbook.create_sheet(title='Foto Dokumentasi')
+        
+        # Style Judul
+        title_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+        title_font = Font(name="Calibri", size=12, bold=True, color="FFFFFF")
+        center_align = Alignment(horizontal="center", vertical="center")
+        border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+
+        # Set Lebar Kolom (A & B untuk Foto)
+        worksheet2.column_dimensions['A'].width = 60
+        worksheet2.column_dimensions['B'].width = 60
+
+        current_row = 1
+        
+        # Dictionary untuk menyimpan lokasi (Cell ID) dari Foto 1 setiap baris data
+        # Key: Nomor SPK, Value: Alamat Cell Judul Foto 1 di Sheet 2
+        photo_locations_map = {}
+
+        # Loop setiap baris data untuk mengisi Sheet Foto Dokumentasi
+        for index, row in df_excel.iterrows():
+            job_title = row.get('Nama Pekerjaan', f'Pekerjaan {index+1}')
+            spk_id = row.get('Nomor SPK', f'SPK_{index}')
+            
+            p1_path = row.get('Link Path Foto 1', '')
+            p2_path = row.get('Link Path Foto 2', '')
+
+            # Simpan lokasi awal pekerjaan ini di Sheet Foto
+            # Kita gunakan Cell A di baris judul sebagai target link
+            photo_locations_map[spk_id] = f"A{current_row}"
+
+            # 1. Baris Judul (Merged Cells A-B)
+            worksheet2.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=2)
+            title_cell = worksheet2.cell(row=current_row, column=1, value=job_title)
+            title_cell.fill = title_fill
+            title_cell.font = title_font
+            title_cell.alignment = center_align
+            title_cell.border = border
+            
+            current_row += 1
+
+            # 2. Baris Foto (Penyisipan Gambar Fisik)
+            # Set Tinggi Baris agar foto terlihat
+            worksheet2.row_dimensions[current_row].height = 300
+            
+            col_index = 1
+            for p_path in [p1_path, p2_path]:
+                cell = worksheet2.cell(row=current_row, column=col_index)
+                cell.border = border # Beri border kosong
+                
+                if p_path and os.path.exists(str(p_path)):
+                    try:
+                        # Load & Resize Gambar
+                        pil_img = PILImage.open(p_path)
+                        original_width, original_height = pil_img.size
+                        
+                        # Resize proporsional
+                        target_height = 390 # Sedikit kurang dari tinggi baris Excel
+                        ratio = target_height / original_height
+                        target_width = int(original_width * ratio)
+                        
+                        # Batasi lebar maksimal agar tidak overlap
+                        if target_width > 420:
+                             target_width = 420
+                             ratio = target_width / original_width
+                             target_height = int(original_height * ratio)
+
+                        pil_img = pil_img.resize((target_width, target_height), PILImage.Resampling.LANCZOS)
+                        
+                        # Ubah ke format OpenPyXL Image
+                        img_byte_arr = io.BytesIO()
+                        pil_img.save(img_byte_arr, format=pil_img.format if pil_img.format else 'JPEG')
+                        img_byte_arr.seek(0)
+                        
+                        opx_img = OpenPyXLImage(img_byte_arr)
+                        
+                        # Sisipkan ke Excel
+                        col_letter = get_column_letter(col_index)
+                        worksheet2.add_image(opx_img, f"{col_letter}{current_row}")
+                        
+                    except Exception as e:
+                        cell.value = f"Gagal memuat foto"
+                        cell.alignment = center_align
+                else:
+                    cell.value = "Foto Tidak Tersedia"
+                    cell.alignment = center_align
+                    
+                col_index += 1
+                
+            current_row += 2 # Beri jarak antar pekerjaan
+
+        # ---------------------------------------------------------
+        # SHEET 1: LAPORAN PROGRESS (DENGAN INTERNAL HYPERLINK)
+        # ---------------------------------------------------------
+        # Ganti teks path yang panjang menjadi "Lihat Foto" di DataFrame copy
         df_progress = df_excel.copy()
         
+        # Menulis data utama (Header & Teks) ke sheet 1
         df_progress.to_excel(writer, index=False, sheet_name='Laporan Progress')
         worksheet1 = writer.sheets['Laporan Progress']
-        
-        # ---------------------------------------------------------
-        # SHEET 2: FOTO DOKUMENTASI
-        # ---------------------------------------------------------
-        cols_foto = [
-            'No', 'Nomor SPK', 'Nama Kontraktor', 'Jenis Pekerjaan', 
-            'Unit Proyek', 'Link Path Foto 1', 'Link Path Foto 2', 'Catatan Pekerjaan Terbaru'
-        ]
-        cols_exist = [c for c in cols_foto if c in df_excel.columns]
-        df_foto = df_excel[cols_exist].copy()
-        
-        df_foto.to_excel(writer, index=False, sheet_name='Foto Dokumentasi')
-        worksheet2 = writer.sheets['Foto Dokumentasi']
 
-        # ---------------------------------------------------------
-        # STYLING & FORMATTING DENGAN OPENPYXL
-        # ---------------------------------------------------------
-        header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
-        header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-        link_font = Font(name="Calibri", size=11, color="0563C1", underline="single")
+        # Styling Sheet 1
+        header_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+        header_font = Font(bold=True)
+        link_font = Font(color="0563C1", underline="single") # Biru Standar Hyperlink
         
-        thin_border = Border(
-            left=Side(style='thin', color='000000'),
-            right=Side(style='thin', color='000000'),
-            top=Side(style='thin', color='000000'),
-            bottom=Side(style='thin', color='000000')
-        )
+        # Indeks Kolom Foto (1-based)
+        col_f1_idx = df_progress.columns.get_loc("Link Path Foto 1") + 1
+        col_f2_idx = df_progress.columns.get_loc("Link Path Foto 2") + 1
+        col_spk_idx = df_progress.columns.get_loc("Nomor SPK") + 1
 
-        for sheet in [worksheet1, worksheet2]:
-            # Format Header
-            for col_num in range(1, sheet.max_column + 1):
-                cell = sheet.cell(row=1, column=col_num)
-                cell.fill = header_fill
-                cell.font = header_font
-                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-                cell.border = thin_border
+        # Format Data & Pembuatan Hyperlink Internal
+        for row_idx in range(1, worksheet1.max_row + 1):
+            for col_idx in range(1, worksheet1.max_column + 1):
+                cell = worksheet1.cell(row=row_idx, column=col_idx)
+                cell.border = border
+                
+                # Format Header
+                if row_idx == 1:
+                    cell.fill = header_fill
+                    cell.font = header_font
+                    cell.alignment = Alignment(horizontal="center", wrap_text=True)
+                    continue
 
-            # Format Data & Pemendekan Hyperlink Foto
-            for row_idx in range(2, sheet.max_row + 1):
-                for col_idx in range(1, sheet.max_column + 1):
-                    cell = sheet.cell(row=row_idx, column=col_idx)
-                    cell.border = thin_border
-                    cell.alignment = Alignment(vertical="center")
+                # Ambil Nomor SPK baris ini sebagai kunci map
+                current_spk_id = worksheet1.cell(row=row_idx, column=col_spk_idx).value
+                target_cell_address = photo_locations_map.get(current_spk_id)
+
+                # Cek jika kolom adalah Foto 1 atau Foto 2
+                if col_idx == col_f1_idx or col_idx == col_f2_idx:
+                    path_val = cell.value
                     
-                    header_name = str(sheet.cell(row=1, column=col_idx).value)
-                    
-                    # Konversi Teks Path Foto yang Panjang menjadi Link Ringkas
-                    if "Link Path Foto" in header_name and cell.value:
-                        path_str = str(cell.value).strip()
-                        if path_str and path_str.lower() != 'none':
-                            foto_num = "1" if "1" in header_name else "2"
-                            # Mengubah teks isi sel menjadi pendek
-                            cell.value = f"Lihat Foto {foto_num}"
-                            
-                            # Membuat Tautan/Hyperlink
-                            cell.hyperlink = path_str
+                    if path_val and path_val != "":
+                        # 1. Ubah teks isi sel menjadi pendek (Tipe data jadi teks biasa)
+                        foto_num = "1" if col_idx == col_f1_idx else "2"
+                        cell.value = f"Lihat Foto {foto_num}"
+                        
+                        # 2. Membuat Tautan/Hyperlink INTERNAL ke Sheet 2
+                        if target_cell_address:
+                            # Formula internal link: #SheetName!CellAddress
+                            # Teks akan berubah warna dan bergaris bawah otomatis di Excel
+                            cell.hyperlink = f"#'Foto Dokumentasi'!{target_cell_address}"
                             cell.font = link_font
-                            cell.alignment = Alignment(horizontal="center", vertical="center")
+                            cell.alignment = center_align
+                    else:
+                        cell.value = "-"
+                        cell.alignment = center_align
 
-            # Mengatur Lebar Kolom Otomatis
-            for col in sheet.columns:
-                max_len = max(len(str(cell.value or '')) for cell in col)
-                col_letter = get_column_letter(col[0].column)
-                sheet.column_dimensions[col_letter].width = max(max_len + 3, 15)
+        # Mengatur Lebar Kolom Otomatis di Sheet 1
+        for col in worksheet1.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            col_letter = get_column_letter(col[0].column)
+            worksheet1.column_dimensions[col_letter].width = max(max_len + 3, 15)
 
     return output.getvalue()
 
 
 # ==========================================
-# TAMPILAN UTAMA STREAMLIT
+# MAIN APP TAMPILAN
 # ==========================================
-st.title("📊 Laporan Progress & Dokumentasi Pekerjaan")
+st.title("📊 Laporan Progress & Dokumentasi Foto Interaktif")
 st.markdown("---")
 
-# Sidebar Menu Navigation
-menu = st.sidebar.selectbox("Navigasi Menu", ["Lihat Data & Download", "Tambah Progress Baru"])
+df_current = st.session_state["data_progress"]
 
-# ------------------------------------------
-# MENU 1: LIHAT DATA & DOWNLOAD EXCEL
-# ------------------------------------------
-if menu == "Lihat Data & Download":
-    st.subheader("📋 Ringkasan Data Progress Pekerjaan")
+if df_current.empty:
+    st.info("Belum ada data progress.")
+else:
+    st.subheader("📋 Ringkasan Laporan")
+    st.dataframe(
+        df_current.drop(columns=["real_id"], errors="ignore"),
+        use_container_width=True
+    )
     
-    df_current = st.session_state["data_progress"]
+    st.markdown("---")
+    st.subheader("📥 Export ke Excel")
+    st.info("""File Excel akan berisi 2 Sheet:
+1. **Laporan Progress:** Kolom foto berisi link pendek biru yang jika diklik akan pindah ke Sheet 2.
+2. **Foto Dokumentasi:** Layout khusus berisi foto fisik yang tersusun rapi per pekerjaan (sesuai contoh).""")
     
-    if df_current.empty:
-        st.warning("Belum ada data progress pekerjaan.")
-    else:
-        # Tampilkan Data di Streamlit
-        st.dataframe(
-            df_current.drop(columns=["real_id"], errors="ignore"),
-            use_container_width=True
-        )
-        
-        st.markdown("---")
-        st.subheader("📥 Export Laporan ke Excel")
-        st.info("File Excel akan berisi 2 Sheet: **Laporan Progress** dan **Foto Dokumentasi**, dengan link foto yang rapi (format ringkas).")
-        
-        excel_bytes = generate_excel(df_current)
-        
-        st.download_button(
-            label="💾 Download File Excel (.xlsx)",
-            data=excel_bytes,
-            file_name="Laporan_Progress_dan_Foto_Dokumentasi.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-# ------------------------------------------
-# MENU 2: TAMBAH DATA PROGRESS BARU
-# ------------------------------------------
-elif menu == "Tambah Progress Baru":
-    st.subheader("➕ Form Input Progress & Foto Dokumentasi")
-    
-    with st.form(key="form_progress", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            no_spk = st.text_input("Nomor SPK", value="052/PSM/2BPRE/BPS/LIJKTO/INF/VII/2025")
-            kontraktor = st.text_input("Nama Kontraktor", value="PT Butun Bintana BPRE")
-            jenis_pekerjaan = st.text_input("Jenis Pekerjaan", value="RENOVASI ATAP RUMAH G1 NO 02 TAHUN 1999 BUTUN")
-            unit_proyek = st.text_input("Unit Proyek", value="Unit 1")
-            
-        with col2:
-            target_prog = st.number_input("Target Progress (%)", min_value=0.0, max_value=100.0, value=100.0)
-            realisasi_prog = st.number_input("Realisasi Progress (%)", min_value=0.0, max_value=100.0, value=100.0)
-            catatan = st.text_area("Catatan Pekerjaan Terbaru", value="Pekerjaan selesai sesuai spesifikasi.")
-            
-        st.markdown("**Upload Foto Dokumentasi (Opsional):**")
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            file_foto1 = st.file_uploader("Upload Foto Dokumentasi 1", type=["jpg", "jpeg", "png"])
-        with col_f2:
-            file_foto2 = st.file_uploader("Upload Foto Dokumentasi 2", type=["jpg", "jpeg", "png"])
-            
-        submit_button = st.form_submit_button(label="Simpan Data Progress")
-        
-    if submit_button:
-        # Simpan file foto jika ada
-        path_foto1 = ""
-        path_foto2 = ""
-        
-        if file_foto1 is not None:
-            filename1 = f"{UPLOAD_DIR}/{jenis_pekerjaan.replace(' ', '_')}_Foto1_{file_foto1.name}"
-            with open(filename1, "wb") as f:
-                f.write(file_foto1.getbuffer())
-            path_foto1 = filename1
-            
-        if file_foto2 is not None:
-            filename2 = f"{UPLOAD_DIR}/{jenis_pekerjaan.replace(' ', '_')}_Foto2_{file_foto2.name}"
-            with open(filename2, "wb") as f:
-                f.write(file_foto2.getbuffer())
-            path_foto2 = filename2
-            
-        # Hitung nomor dan selisih
-        df_old = st.session_state["data_progress"]
-        new_no = len(df_old) + 1
-        selisih = realisasi_prog - target_prog
-        
-        new_entry = {
-            "real_id": new_no,
-            "No": new_no,
-            "Nomor SPK": no_spk,
-            "Nama Kontraktor": kontraktor,
-            "Jenis Pekerjaan": jenis_pekerjaan,
-            "Unit Proyek": unit_proyek,
-            "Target Progress (%)": target_prog,
-            "Realizasi Progress (%)": realisasi_prog,
-            "Selisih / Varian (%)": selisih,
-            "Link Path Foto 1": path_foto1,
-            "Link Path Foto 2": path_foto2,
-            "Catatan Pekerjaan Terbaru": catatan
-        }
-        
-        st.session_state["data_progress"] = pd.concat(
-            [df_old, pd.DataFrame([new_entry])], 
-            ignore_index=True
-        )
-        
-        st.success("Data progress dan foto dokumentasi berhasil disimpan!")
+    # Tombol Download
+    if st.download_button(
+        label="💾 Download File Excel (Interaktif)",
+        data=generate_excel_with_image_links(df_current),
+        file_name="Laporan_Progress_dan_Foto_Dokumentasi.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    ):
+        st.success("File berhasil dibuat. Pastikan Anda memiliki foto fisik di direktori 'uploads_dokumentasi' agar gambar muncul di Excel.")
