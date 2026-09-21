@@ -316,7 +316,7 @@ if menu == MENU_DASHBOARD:
         except Exception:
             df_all = pd.DataFrame()
 
-   def render_dashboard_table(df_data, tab_key_prefix):
+  def render_dashboard_table(df_data, tab_key_prefix):
         column_order = [
             'No', 'Nomor SPK', 'Nama Kontraktor', 'Jenis Pekerjaan', 'Unit Proyek', 'Jumlah',
             'Nilai Kontrak Pekerjaan Ini (Rp)', 'Progress Minggu Lalu (%)', 'Progress Minggu Ini (%)',
