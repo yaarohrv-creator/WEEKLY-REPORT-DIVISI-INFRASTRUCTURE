@@ -350,21 +350,46 @@ if menu == MENU_DASHBOARD:
             key=f"editor_{tab_key_prefix}"
         )
 
-        # Tombol Simpan Perubahan Data saja (Bagian hapus sudah dihilangkan)
-        if st.button("💾 Simpan Perubahan Data", key=f"btn_save_{tab_key_prefix}"):
-            with get_db_connection() as conn:
-                cursor = conn.cursor()
-                for idx, row in edited_df.iterrows():
-                    real_id = df_data.iloc[idx]['real_id']
-                    if pd.notna(real_id):
-                        cursor.execute("""
-                            UPDATE laporan_mingguan
-                            SET progress_minggu_ini = ?, catatan = ?
-                            WHERE id = ?
-                        """, (row.get('Progress Minggu Ini (%)'), row.get('Catatan Pekerjaan Terbaru'), real_id))
-                conn.commit()
-            st.success("Perubahan data berhasil disimpan!")
-            st.rerun()
+        col_sav, col_del = st.columns([2, 2])
+        with col_sav:
+            if st.button("💾 Simpan Perubahan Data", key=f"btn_save_{tab_key_prefix}"):
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    for idx, row in edited_df.iterrows():
+                        real_id = df_data.iloc[idx]['real_id']
+                        if pd.notna(real_id):
+                            cursor.execute("""
+                                UPDATE laporan_mingguan
+                                SET progress_minggu_ini = ?, catatan = ?
+                                WHERE id = ?
+                            """, (row.get('Progress Minggu Ini (%)'), row.get('Catatan Pekerjaan Terbaru'), real_id))
+                    conn.commit()
+                st.success("Perubahan data berhasil disimpan!")
+                st.rerun()
+
+        # --- FITUR HAPUS PERMANEN PEKERJAAN DARI DASHBOARD + MASTER ---
+        with col_del:
+            spk_list = df_data[['Nomor SPK', 'Jenis Pekerjaan', 'real_id']].copy()
+            options_del = ["-- Pilih Pekerjaan yang Ingin Dihapus --"] + [
+                f"SPK: {r['Nomor SPK']} | {r['Jenis Pekerjaan']}" for _, r in spk_list.iterrows()
+            ]
+            selected_del = st.selectbox("Hapus Pekerjaan Permanen:", options_del, key=f"sel_del_{tab_key_prefix}")
+            
+            if st.button("🗑️ Hapus Pekerjaan Dipilih", key=f"btn_del_job_{tab_key_prefix}", type="primary"):
+                if selected_del != "-- Pilih Pekerjaan yang Ingin Dihapus --":
+                    idx_pilihan = options_del.index(selected_del) - 1
+                    target_row = spk_list.iloc[idx_pilihan]
+                    
+                    with get_db_connection() as conn:
+                        cursor = conn.cursor()
+                        # Hapus dari laporan_mingguan
+                        cursor.execute("DELETE FROM laporan_mingguan WHERE id = ?", (target_row['real_id'],))
+                        # Hapus juga dari master_spk agar tidak muncul lagi
+                        cursor.execute("DELETE FROM master_spk WHERE no_spk = ? AND jenis_pekerjaan = ?", 
+                                       (target_row['Nomor SPK'], target_row['Jenis Pekerjaan']))
+                        conn.commit()
+                    st.success(f"Pekerjaan {target_row['Jenis Pekerjaan']} ({target_row['Nomor SPK']}) berhasil dihapus permanen!")
+                    st.rerun()
 
         st.markdown("---")
         st.subheader("📥 Export & Download Laporan")
@@ -673,36 +698,29 @@ elif menu == MENU_MASTER:
                             WHERE id=?
                         """, (row['Nomor SPK'], row['Nama Kontraktor'], row['Jenis Pekerjaan'], row['Unit Proyek'], int(row['Jumlah'] or 1), row['Nilai Kontrak (Rp)'], row['Catatan / Keterangan'], real_id))
                     conn.commit()
-                st.success("Master data berhasil diperbarui!")
+                st.success("Master data diperbarui.")
                 st.rerun()
 
         with col_d:
-            spk_list_m = df_data[['Nomor SPK', 'Jenis Pekerjaan', 'real_id']].copy()
-            options_m_del = ["-- Pilih Master yang Ingin Dihapus --"] + [
-                f"SPK: {r['Nomor SPK']} | {r['Jenis Pekerjaan']}" for _, r in spk_list_m.iterrows()
-            ]
-            selected_m_del = st.selectbox("Hapus Master Pekerjaan:", options_m_del, key=f"sel_m_del_{tab_key_prefix}")
-            
-            if st.button("🗑️ Hapus Master Dipilih", key=f"btn_del_m_{tab_key_prefix}", type="primary"):
-                if selected_m_del != "-- Pilih Master yang Ingin Dihapus --":
-                    idx_pilihan = options_m_del.index(selected_m_del) - 1
-                    target_row = spk_list_m.iloc[idx_pilihan]
-                    
+            spk_to_del = st.selectbox("Pilih SPK yang akan dihapus:", ["-- Pilih SPK --"] + df_data['Nomor SPK'].unique().tolist(), key=f"select_del_m_{tab_key_prefix}")
+            if st.button("🗑️ Hapus SPK Dipilih", key=f"btn_del_m_{tab_key_prefix}", type="primary"):
+                if spk_to_del != "-- Pilih SPK --":
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
-                        cursor.execute("DELETE FROM master_spk WHERE id = ?", (target_row['real_id'],))
+                        cursor.execute("DELETE FROM master_spk WHERE no_spk=?", (spk_to_del,))
+                        cursor.execute("DELETE FROM laporan_mingguan WHERE no_spk=?", (spk_to_del,))
                         conn.commit()
-                    st.success(f"Master {target_row['Jenis Pekerjaan']} ({target_row['Nomor SPK']}) berhasil dihapus!")
+                    st.success(f"SPK {spk_to_del} berhasil dihapus dari Master dan Laporan.")
                     st.rerun()
 
     with tab_m_bangka:
-        st.subheader("🏝️ Master Data Pekerjaan - Bangka")
+        st.subheader("📍 Master Data - Wilayah Bangka")
         if not df_master.empty:
             df_m_bangka = df_master[df_master['Unit Proyek'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)]
             render_master_table(df_m_bangka, "bangka")
 
     with tab_m_belitung:
-        st.subheader("🏖️ Master Data Pekerjaan - Belitung")
+        st.subheader("📍 Master Data - Wilayah Belitung")
         if not df_master.empty:
             pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
             df_m_belitung = df_master[
@@ -712,24 +730,27 @@ elif menu == MENU_MASTER:
             render_master_table(df_m_belitung, "belitung")
 
     with tab_m_tambah:
-        st.subheader("➕ Tambah Data SPK / Pekerjaan Baru")
-        with st.form("form_add_master", clear_on_submit=True):
-            col_a1, col_a2 = st.columns(2)
-            with col_a1:
-                new_no_spk = st.text_input("Nomor SPK*")
-                new_kontraktor = st.text_input("Nama Kontraktor*")
-                new_jenis_pekerjaan = st.text_input("Jenis Pekerjaan*")
-            with col_a2:
-                new_unit = st.text_input("Unit Proyek (Contoh: BANGKA / BELITUNG)*")
-                new_jumlah = st.number_input("Jumlah Unit/Pekerjaan", min_value=1, value=1, step=1)
-                new_nilai = st.number_input("Nilai Kontrak Pekerjaan (Rp)", min_value=0.0, value=0.0, step=100000.0, format="%.2f")
+        st.subheader("➕ Form Tambah SPK / Pekerjaan Baru")
+        with st.form("form_tambah_master", clear_on_submit=True):
+            col_a, col_b = st.columns(2)
             
-            new_catatan = st.text_area("Catatan / Keterangan Tambahan")
-            btn_add = st.form_submit_button("➕ Daftarkan Pekerjaan Baru")
+            with col_a:
+                wilayah = st.selectbox("Wilayah / Unit Proyek:", ["BANGKA", "BELITUNG"])
+                unit_proyek = st.text_input("Nama Unit / Detail Lokasi Proyek:", value=f"UNIT {wilayah}")
+                no_spk = st.text_input("Nomor SPK:")
+                kontraktor = st.text_input("Nama Kontraktor:")
 
-            if btn_add:
-                if not new_no_spk or not new_jenis_pekerjaan or not new_kontraktor or not new_unit:
-                    st.error("⚠️ Mohon lengkapi seluruh field wajib (Nomor SPK, Kontraktor, Jenis Pekerjaan, dan Unit Proyek)!")
+            with col_b:
+                jenis_pekerjaan = st.text_input("Jenis Pekerjaan:")
+                jumlah = st.number_input("Jumlah Unit/Pekerjaan:", min_value=1, value=1, step=1)
+                nilai_pekerjaan = st.number_input("Nilai Kontrak Pekerjaan (Rp):", min_value=0.0, value=0.0, step=1000000.0)
+                catatan = st.text_area("Catatan / Keterangan SPK:")
+
+            submit_tambah = st.form_submit_button("➕ Tambahkan ke Master Data")
+
+            if submit_tambah:
+                if not no_spk or not jenis_pekerjaan or not kontraktor:
+                    st.error("⚠️ Nomor SPK, Kontraktor, dan Jenis Pekerjaan wajib diisi!")
                 else:
                     try:
                         with get_db_connection() as conn:
@@ -737,19 +758,11 @@ elif menu == MENU_MASTER:
                             cursor.execute("""
                                 INSERT INTO master_spk (no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_pekerjaan, catatan)
                                 VALUES (?, ?, ?, ?, ?, ?, ?)
-                            """, (new_no_spk.strip(), new_kontraktor.strip(), new_jenis_pekerjaan.strip(), new_unit.strip(), int(new_jumlah), new_nilai, new_catatan.strip()))
-                            
-                            cursor.execute("""
-                                INSERT INTO laporan_mingguan (
-                                    no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan,
-                                    progress_minggu_lalu, progress_minggu_ini, catatan
-                                ) VALUES (?, ?, ?, ?, ?, ?, 0.0, 0.0, 'Pekerjaan baru didaftarkan')
-                            """, (new_no_spk.strip(), new_jenis_pekerjaan.strip(), new_kontraktor.strip(), new_unit.strip(), int(new_jumlah), new_nilai))
-                            
+                            """, (no_spk.strip(), kontraktor.strip(), jenis_pekerjaan.strip(), unit_proyek.strip(), int(jumlah), nilai_pekerjaan, catatan.strip()))
                             conn.commit()
-                        st.success(f"✅ Pekerjaan baru '{new_jenis_pekerjaan}' untuk SPK '{new_no_spk}' berhasil ditambahkan ke Master dan Dashboard!")
+                        st.success(f"✅ Master SPK '{no_spk}' - '{jenis_pekerjaan}' berhasil ditambahkan!")
                         st.rerun()
                     except sqlite3.IntegrityError:
-                        st.error("⚠️ Kombinasi Nomor SPK dan Jenis Pekerjaan tersebut sudah terdaftar!")
+                        st.error("⚠️ Kombinasi Nomor SPK dan Jenis Pekerjaan tersebut sudah terdaftar di database!")
                     except Exception as e:
-                        st.error(f"Gagal menambahkan data: {e}")
+                        st.error(f"⚠️ Terjadi kesalahan saat menyimpan data: {e}")
