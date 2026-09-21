@@ -142,10 +142,14 @@ def generate_excel_full_feature(df):
         # ---------------------------------------------------------
         df_excel = df.drop(columns=['real_id'], errors='ignore').copy()
         
-        # Lembar Utama (Laporan Progress) - Tanpa Kolom Path Foto Panjang
-        df_progress = df_excel.drop(columns=['Foto 1', 'Foto 2'], errors='ignore').copy()
+        # Lembar Utama (Laporan Progress) - Hapus kolom jalur/path foto
+        # Kolom 'Pratinjau Foto 1' dan 'Pratinjau Foto 2' di-drop dari sheet ini
+        df_progress = df_excel.drop(
+            columns=['Foto 1', 'Foto 2', 'Pratinjau Foto 1', 'Pratinjau Foto 2'], 
+            errors='ignore'
+        ).copy()
         
-        # Sisipkan Kolom 'Dokumentasi' Kosong setelah 'Catatan Pekerjaan Terbaru'
+        # Sisipkan Kolom 'Dokumentasi' setelah 'Catatan Pekerjaan Terbaru'
         try:
             target_col_idx = df_progress.columns.get_loc('Catatan Pekerjaan Terbaru') + 1
             df_progress.insert(target_col_idx, 'Dokumentasi', '') 
@@ -156,7 +160,7 @@ def generate_excel_full_feature(df):
         
         worksheet_progress = writer.sheets['Laporan Progress']
         
-        # Lembar Kedua (Foto Dokumentasi) - Layout Khusus Gambar
+        # Lembar Kedua (Foto Dokumentasi) - Layout Khusus Gambar Visual
         workbook = writer.book
         worksheet_foto = workbook.create_sheet(title='Foto Dokumentasi')
         
@@ -193,7 +197,7 @@ def generate_excel_full_feature(df):
                 worksheet_progress.column_dimensions[get_column_letter(col[0].column)].width = 15
 
         # ---------------------------------------------------------
-        # Layout & Penyisipan Gambar Visual yang Rapi (Sheet Foto)
+        # Layout & Penyisipan Gambar Visual (Sheet Foto Dokumentasi)
         # ---------------------------------------------------------
         LEBAR_KOLOM_FOTO = 50
         worksheet_foto.column_dimensions['A'].width = 40 
@@ -209,14 +213,12 @@ def generate_excel_full_feature(df):
             cell_h.alignment = align_center
             cell_h.border = border_standard
 
-        # Map untuk menyimpan lokasi tujuan hyperlink
+        # Map lokasi untuk hyperlink internal
         job_map_targets = {}
-        
-        # Loop data untuk menyisipkan gambar fisik
         foto_row_idx = 2
         
+        # Loop data master (menggunakan df_excel asli yang masih punya path foto)
         for index, row in df_excel.iterrows():
-            # Tulis Judul Pekerjaan (Kolom A)
             judul_gabungan = f"SPK: {row['Nomor SPK']}\n\nPekerjaan: {row['Jenis Pekerjaan']}"
             cell_j = worksheet_foto.cell(row=foto_row_idx, column=1, value=judul_gabungan)
             cell_j.alignment = Alignment(wrap_text=True, vertical="center", horizontal="left")
@@ -227,14 +229,12 @@ def generate_excel_full_feature(df):
 
             worksheet_foto.row_dimensions[foto_row_idx].height = 250
 
-            # Fungsi Helper untuk menyisipkan satu gambar fisik (dengan resize)
             def insert_image_visual_resized(path, ws, current_row, current_col, target_col_width):
                 cell_p = ws.cell(row=current_row, column=current_col)
                 cell_p.border = border_standard
                 
                 if path and os.path.exists(str(path)) and has_pil:
                     try:
-                        # Resize proporsional
                         pil_img = PILImage.open(path)
                         orig_w, orig_h = pil_img.size
                         
@@ -256,15 +256,16 @@ def generate_excel_full_feature(df):
                         cell_p.value = f"Eror load gambar: {e}"
                         cell_p.alignment = align_center
                 else:
-                    cell_p.value = "Foto tidak tersedia / Pillow belum diinstal"
+                    cell_p.value = "Foto tidak tersedia"
                     cell_p.alignment = align_center
 
+            # Tetap mengambil data foto dari df_excel asli untuk ditampilkan di sheet 'Foto Dokumentasi'
             insert_image_visual_resized(row.get('Pratinjau Foto 1'), worksheet_foto, foto_row_idx, 2, LEBAR_KOLOM_FOTO)
             insert_image_visual_resized(row.get('Pratinjau Foto 2'), worksheet_foto, foto_row_idx, 3, LEBAR_KOLOM_FOTO)
 
             foto_row_idx += 1
 
-        # Buat Hyperlink di Sheet 'Laporan Progress'
+        # Buat Link 'Lihat Foto' di Sheet 'Laporan Progress'
         try:
             no_col_idx = df_progress.columns.get_loc('No') + 1
             doc_col_idx = df_progress.columns.get_loc('Dokumentasi') + 1
