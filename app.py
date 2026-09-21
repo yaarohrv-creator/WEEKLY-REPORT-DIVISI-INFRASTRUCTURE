@@ -143,7 +143,6 @@ def generate_excel_full_feature(df):
         df_excel = df.drop(columns=['real_id'], errors='ignore').copy()
         
         # Lembar Utama (Laporan Progress) - Hapus kolom jalur/path foto
-        # Kolom 'Pratinjau Foto 1' dan 'Pratinjau Foto 2' di-drop dari sheet ini
         df_progress = df_excel.drop(
             columns=['Foto 1', 'Foto 2', 'Pratinjau Foto 1', 'Pratinjau Foto 2'], 
             errors='ignore'
@@ -217,7 +216,7 @@ def generate_excel_full_feature(df):
         job_map_targets = {}
         foto_row_idx = 2
         
-        # Loop data master (menggunakan df_excel asli yang masih punya path foto)
+        # Loop data master
         for index, row in df_excel.iterrows():
             judul_gabungan = f"SPK: {row['Nomor SPK']}\n\nPekerjaan: {row['Jenis Pekerjaan']}"
             cell_j = worksheet_foto.cell(row=foto_row_idx, column=1, value=judul_gabungan)
@@ -259,7 +258,6 @@ def generate_excel_full_feature(df):
                     cell_p.value = "Foto tidak tersedia"
                     cell_p.alignment = align_center
 
-            # Tetap mengambil data foto dari df_excel asli untuk ditampilkan di sheet 'Foto Dokumentasi'
             insert_image_visual_resized(row.get('Pratinjau Foto 1'), worksheet_foto, foto_row_idx, 2, LEBAR_KOLOM_FOTO)
             insert_image_visual_resized(row.get('Pratinjau Foto 2'), worksheet_foto, foto_row_idx, 3, LEBAR_KOLOM_FOTO)
 
@@ -699,6 +697,6 @@ elif menu == MENU_MASTER:
                         st.success(f"✅ Master SPK '{no_spk}' - '{jenis_pekerjaan}' berhasil ditambahkan!")
                         st.rerun()
                     except sqlite3.IntegrityError:
-                        st.error("⚠️ Pasangan Nomor SPK dan Jenis Pekerjaan tersebut sudah ada di database!")
+                        st.error("⚠️ Kombinasi Nomor SPK dan Jenis Pekerjaan tersebut sudah terdaftar di database!")
                     except Exception as e:
-                        st.error(f"Terjadi kesalahan saat menambahkan data: {e}")
+                        st.error(f"⚠️ Terjadi kesalahan saat menyimpan data: {e}")
