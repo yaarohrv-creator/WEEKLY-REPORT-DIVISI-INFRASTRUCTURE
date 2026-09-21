@@ -334,121 +334,144 @@ if st.sidebar.button("🚪 Logout"):
     st.rerun()
 
 # ---------------------------------------------------------
-# MENU 1: DASHBOARD PROGRESS & HISTORY
+# MENU 1: DASHBOARD PROGRESS & HISTORY (DENGAN TAB WILAYAH)
 # ---------------------------------------------------------
 if menu == "Dashboard Progress":
     st.title("📊 WEEKLY REPORT DIVISI INFRASTRUCTURE")
 
-    tab1, tab2 = st.tabs(["📌 Status Progress Terkini", "📜 Riwayat / History Perubahan Progress"])
+    # Buat Tab Utama: Sub-tab Wilayah & History
+    tab_bangka, tab_belitung, tab_semua, tab_history = st.tabs([
+        "🏝️ Laporan Progress Bangka", 
+        "🏖️ Laporan Progress Belitung", 
+        "📋 Semua Progress Proyek", 
+        "📜 Riwayat / History Update"
+    ])
 
-    with tab1:
-        query_view = """
-            SELECT 
-                id AS real_id,
-                waktu_input AS [Waktu Input Terbaru],
-                no_spk AS [Nomor SPK],
-                kontraktor AS [Nama Kontraktor],
-                jenis_pekerjaan AS [Jenis Pekerjaan],
-                unit AS [Unit Proyek],
-                jumlah AS [Jumlah],
-                nilai_pekerjaan AS [Nilai Kontrak Pekerjaan Ini (Rp)],
-                progress_minggu_lalu AS [Progress Minggu Lalu (%)],
-                progress_minggu_ini AS [Progress Minggu Ini (%)],
-                (COALESCE(progress_minggu_ini, 0) - COALESCE(progress_minggu_lalu, 0)) AS [Selisih / Varian (%)],
-                foto_1 AS [Foto 1],
-                foto_2 AS [Foto 2],
-                catatan AS [Catatan Pekerjaan Terbaru]
-            FROM laporan_mingguan
-            ORDER BY id ASC
-        """
+    query_view = """
+        SELECT 
+            id AS real_id,
+            waktu_input AS [Waktu Input Terbaru],
+            no_spk AS [Nomor SPK],
+            kontraktor AS [Nama Kontraktor],
+            jenis_pekerjaan AS [Jenis Pekerjaan],
+            unit AS [Unit Proyek],
+            jumlah AS [Jumlah],
+            nilai_pekerjaan AS [Nilai Kontrak Pekerjaan Ini (Rp)],
+            progress_minggu_lalu AS [Progress Minggu Lalu (%)],
+            progress_minggu_ini AS [Progress Minggu Ini (%)],
+            (COALESCE(progress_minggu_ini, 0) - COALESCE(progress_minggu_lalu, 0)) AS [Selisih / Varian (%)],
+            catatan AS [Catatan Pekerjaan Terbaru],
+            foto_1 AS [Pratinjau Foto 1],
+            foto_2 AS [Pratinjau Foto 2]
+        FROM laporan_mingguan
+        ORDER BY id ASC
+    """
 
-        with get_db_connection() as conn:
-            try:
-                df_view = pd.read_sql_query(query_view, conn)
-            except Exception:
-                df_view = pd.DataFrame()
+    with get_db_connection() as conn:
+        try:
+            df_all = pd.read_sql_query(query_view, conn)
+        except Exception:
+            df_all = pd.DataFrame()
 
-        if df_view.empty:
-            st.info("💡 Belum ada data progress terkini. Silakan input progress mingguan.")
-        else:
-            if 'No' not in df_view.columns:
-                df_view.insert(0, 'No', range(1, len(df_view) + 1))
+    # Function Helper untuk Menampilkan Tabel & Tombol Export per Wilayah
+    def render_dashboard_table(df_data, tab_key_prefix):
+        if df_data.empty:
+            st.info("💡 Belum ada data progress untuk wilayah/kategori ini.")
+            return
 
-            edited_df = st.data_editor(
-                df_view,
-                num_rows="dynamic",
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "real_id": None,
-                    "Foto 1": st.column_config.ImageColumn("Pratinjau Foto 1", help="Foto dokumentasi 1"),
-                    "Foto 2": st.column_config.ImageColumn("Pratinjau Foto 2", help="Foto dokumentasi 2")
-                },
-                key="editor_dashboard"
+        df_display = df_data.copy()
+        if 'No' not in df_display.columns:
+            df_display.insert(0, 'No', range(1, len(df_display) + 1))
+
+        # Susunan kolom dengan foto di paling kanan
+        column_order = [
+            'No', 'Nomor SPK', 'Nama Kontraktor', 'Jenis Pekerjaan', 'Unit Proyek', 'Jumlah',
+            'Nilai Kontrak Pekerjaan Ini (Rp)', 'Progress Minggu Lalu (%)', 'Progress Minggu Ini (%)',
+            'Selisih / Varian (%)', 'Catatan Pekerjaan Terbaru', 'Pratinjau Foto 1', 'Pratinjau Foto 2'
+        ]
+        
+        existing_cols = [c for c in column_order if c in df_display.columns]
+
+        edited_df = st.data_editor(
+            df_display[existing_cols],
+            num_rows="dynamic",
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "real_id": None,
+                "Pratinjau Foto 1": st.column_config.ImageColumn("Pratinjau Foto 1"),
+                "Pratinjau Foto 2": st.column_config.ImageColumn("Pratinjau Foto 2"),
+                "Nilai Kontrak Pekerjaan Ini (Rp)": st.column_config.NumberColumn(format="Rp %d"),
+            },
+            key=f"editor_{tab_key_prefix}"
+        )
+
+        # Tombol Simpan Perubahan
+        if st.button("💾 Simpan Perubahan Data", key=f"btn_save_{tab_key_prefix}"):
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                for idx, row in edited_df.iterrows():
+                    # Ambil real_id dari df_data asli
+                    orig_row = df_data.iloc[idx]
+                    real_id = orig_row.get('real_id')
+                    if pd.notna(real_id):
+                        cursor.execute("""
+                            UPDATE laporan_mingguan
+                            SET progress_minggu_ini = ?, catatan = ?
+                            WHERE id = ?
+                        """, (row.get('Progress Minggu Ini (%)'), row.get('Catatan Pekerjaan Terbaru'), real_id))
+                conn.commit()
+            st.success("Perubahan data berhasil disimpan!")
+            st.rerun()
+
+        # Tombol Export Excel
+        st.markdown("---")
+        st.subheader("📥 Export & Download Laporan")
+        try:
+            excel_bytes = generate_excel_full_feature(df_display)
+            st.download_button(
+                label=f"📥 Download Laporan ({tab_key_prefix.capitalize()}) - Excel",
+                data=excel_bytes,
+                file_name=f"Laporan_Progress_{tab_key_prefix}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"dl_{tab_key_prefix}"
             )
+        except Exception as e:
+            st.error(f"Gagal memproses file Excel: {e}")
 
-            if st.button("💾 Simpan Perubahan & Hapus Data"):
-                with get_db_connection() as conn:
-                    cursor = conn.cursor()
-                    current_ids = [row['real_id'] for idx, row in edited_df.iterrows() if pd.notna(row.get('real_id'))]
+    # --- TAB 1: LAPORAN PROGRESS BANGKA ---
+    with tab_bangka:
+        st.subheader("📍 Laporan Progress Proyek - Wilayah Bangka")
+        if not df_all.empty:
+            # Filter berdasarkan kolom 'Unit Proyek' atau 'Nomor SPK' yang mengandung kata BANGKA
+            df_bangka = df_all[
+                df_all['Unit Proyek'].str.contains('BANGKA|BKA', case=False, na=False) | 
+                df_all['Nomor SPK'].str.contains('BANGKA|BKA', case=False, na=False)
+            ]
+            render_dashboard_table(df_bangka, "bangka")
+        else:
+            st.info("💡 Belum ada data progress.")
 
-                    if current_ids:
-                        format_strings = ','.join(['?'] * len(current_ids))
-                        cursor.execute(f"DELETE FROM laporan_mingguan WHERE id NOT IN ({format_strings})", current_ids)
-                    else:
-                        cursor.execute("DELETE FROM laporan_mingguan")
+    # --- TAB 2: LAPORAN PROGRESS BELITUNG ---
+    with tab_belitung:
+        st.subheader("📍 Laporan Progress Proyek - Wilayah Belitung")
+        if not df_all.empty:
+            # Filter berdasarkan kolom 'Unit Proyek' atau 'Nomor SPK' yang mengandung kata BELITUNG
+            df_belitung = df_all[
+                df_all['Unit Proyek'].str.contains('BELITUNG|BLT', case=False, na=False) | 
+                df_all['Nomor SPK'].str.contains('BELITUNG|BLT', case=False, na=False)
+            ]
+            render_dashboard_table(df_belitung, "belitung")
+        else:
+            st.info("💡 Belum ada data progress.")
 
-                    for idx, row in edited_df.iterrows():
-                        real_id = row.get('real_id')
-                        if pd.notna(real_id) and real_id != "":
-                            cursor.execute("""
-                                UPDATE laporan_mingguan
-                                SET no_spk = ?,
-                                    kontraktor = ?,
-                                    jenis_pekerjaan = ?,
-                                    unit = ?,
-                                    jumlah = ?,
-                                    nilai_pekerjaan = ?,
-                                    progress_minggu_lalu = ?,
-                                    progress_minggu_ini = ?,
-                                    catatan = ?
-                                WHERE id = ?
-                            """, (
-                                row.get('Nomor SPK'),
-                                row.get('Nama Kontraktor'),
-                                row.get('Jenis Pekerjaan'),
-                                row.get('Unit Proyek'),
-                                row.get('Jumlah'),
-                                row.get('Nilai Kontrak Pekerjaan Ini (Rp)'),
-                                row.get('Progress Minggu Lalu (%)'),
-                                row.get('Progress Minggu Ini (%)'),
-                                row.get('Catatan Pekerjaan Terbaru'),
-                                real_id
-                            ))
+    # --- TAB 3: SEMUA PROGRESS PROYEK ---
+    with tab_semua:
+        st.subheader("🌐 Semua Laporan Progress Proyek")
+        render_dashboard_table(df_all, "semua")
 
-                    conn.commit()
-                st.success("Perubahan data berhasil disimpan!")
-                st.rerun()
-
-            # ---------------------------------------------------------
-            # EXPORT DATA KE EXCEL (STYLING OPENPYXL)
-            # ---------------------------------------------------------
-            st.markdown("---")
-            st.subheader("📥 Export & Download Laporan")
-            st.info("File Excel akan berisi 2 Sheet: Sheet 1 (Data Teks) dan Sheet 2 (Visual Foto).")
-
-            try:
-                excel_bytes = generate_excel_full_feature(df_view)
-                st.download_button(
-                    label="📥 Download Laporan (Excel)",
-                    data=excel_bytes,
-                    file_name="Laporan_Progress_dan_Foto.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-            except Exception as e:
-                st.error(f"Gagal memproses file Excel: {e}")
-
-    with tab2:
+    # --- TAB 4: RIWAYAT / HISTORY ---
+    with tab_history:
         st.subheader("📜 Log Riwayat Input Progress Pekerjaan")
         query_history = """
             SELECT 
