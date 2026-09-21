@@ -457,8 +457,15 @@ elif menu == MENU_INPUT:
 
             # Siapkan Dropdown Pilihan SPK (Formatted Display)
             df_master_wilayah['display'] = df_master_wilayah['no_spk'] + ' - ' + df_master_wilayah['jenis_pekerjaan']
+           # Function Helper internal untuk merender Form Input per Wilayah
+        def render_input_form(df_master_wilayah, tab_key_prefix):
+            if df_master_wilayah.empty:
+                st.info("💡 Belum ada data master pekerjaan terdaftar untuk wilayah ini.")
+                return
+
+            # Siapkan Dropdown Pilihan SPK (Formatted Display)
+            df_master_wilayah['display'] = df_master_wilayah['no_spk'] + ' - ' + df_master_wilayah['jenis_pekerjaan']
             
-            # Gunakan key unik untuk selectbox agar tidak bentrok antar tab
             selected_spk_text = st.selectbox(
                 "Pilih SPK/Pekerjaan yang akan dilaporkan:", 
                 df_master_wilayah['display'].tolist(),
@@ -468,8 +475,14 @@ elif menu == MENU_INPUT:
             # Ambil detail SPK yang dipilih
             spk_data_selected = df_master_wilayah[df_master_wilayah['display'] == selected_spk_text].iloc[0]
 
+            # --- PERBAIKAN FORMATTING ANGKA DI SINI ---
+            try:
+                val_num = float(spk_data_selected['nilai_pekerjaan'])
+                nilai_formatted = f"Rp {val_num:,.2f}"
+            except (ValueError, TypeError):
+                nilai_formatted = "-"
+
             # Tampilkan Ringkasan Detail (Info)
-            nilai_formatted = f"Rp {spk_data_selected['nilai_pekerjaan']:,2f}" if pd.notna(spk_data_selected['nilai_pekerjaan']) else "-"
             st.info(f"""📌 **Detail SPK:** 
 *   Kontraktor: **{spk_data_selected['kontraktor']}**
 *   Jenis Pekerjaan: **{spk_data_selected['jenis_pekerjaan']}**
