@@ -10,13 +10,19 @@ from openpyxl.utils import get_column_letter
 
 # Konfigurasi Halaman Streamlit
 st.set_page_config(page_title="Sistem Progress Proyek", layout="wide")
-# TAMBAHKAN KODE LOGO DI SINI (Pastikan file logo.png sudah di-upload ke GitHub)
-st.sidebar.image("logo.png", use_container_width=True)
+
+# Logo Aplikasi
+if os.path.exists("logo.png"):
+    st.sidebar.image("logo.png", use_container_width=True)
 
 # Folder Penyimpanan Foto
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
+
+# ---------------------------------------------------------
+# AUTENTIKASI PASSWORD
+# ---------------------------------------------------------
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
@@ -35,13 +41,6 @@ if not st.session_state["authenticated"]:
     st.text_input("Password Akses:", type="password", key="password_input", on_change=check_password)
     st.info("💡 Silakan hubungi admin untuk mendapatkan password akses.")
     st.stop()
-# =========================================================
-
-
-# Baris selanjutnya (Folder Penyimpanan Foto / Kode Asli Anda)
-UPLOAD_DIR = "uploads"
-if not os.path.exists(UPLOAD_DIR):
-    os.makedirs(UPLOAD_DIR)
 
 # ---------------------------------------------------------
 # FUNGSIONALITAS DATABASE SQLITE (proyek_v2.db)
@@ -65,7 +64,7 @@ def init_db():
         )
     ''')
 
-    # 2. TABEL LAPORAN_MINGGUAN (Ditambahkan foto_1 dan foto_2)
+    # 2. TABEL LAPORAN_MINGGUAN
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS laporan_mingguan (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,7 +91,7 @@ def init_db():
     if 'foto_2' not in cols_lap:
         cursor.execute("ALTER TABLE laporan_mingguan ADD COLUMN foto_2 TEXT")
 
-    # 3. TABEL HISTORY_PROGRESS (Ditambahkan foto_1 dan foto_2)
+    # 3. TABEL HISTORY_PROGRESS
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS history_progress (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -131,11 +130,12 @@ menu = st.sidebar.selectbox("Pilih Menu", [
     "Input Progress Mingguan",
     "Kelola Master SPK"
 ])
-# KODE LOGOUT DITAMBAHKAN DI SINI
+
 st.sidebar.markdown("---")
 if st.sidebar.button("🚪 Logout"):
     st.session_state["authenticated"] = False
     st.rerun()
+
 # ---------------------------------------------------------
 # MENU 1: DASHBOARD PROGRESS & HISTORY
 # ---------------------------------------------------------
@@ -230,6 +230,67 @@ if menu == "Dashboard Progress":
                 conn.commit()
                 st.success("Perubahan data berhasil disimpan!")
                 st.rerun()
+
+            # ---------------------------------------------------------
+            # EXPORT DATA KE EXCEL (STYLING OPENPYXL)
+            # ---------------------------------------------------------
+            st.markdown("---")
+            st.subheader("📥 Export & Download Laporan")
+
+            def generate_excel():
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    # Mengabaikan kolom real_id untuk ekspor
+                    df_excel = df_view.drop(columns=['real_id'], errors='ignore')
+                    df_excel.to_excel(writer, index=False, sheet_name='Laporan Progress')
+                    
+                    worksheet = writer.sheets['Laporan Progress']
+                    
+                    # Style Header (Warna Biru Tua + Teks Putih Tebal)
+                    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+                    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+                    
+                    # Border Hitam Tipis
+                    thin_border = Border(
+                        left=Side(style='thin', color='000000'),
+                        right=Side(style='thin', color='000000'),
+                        top=Side(style='thin', color='000000'),
+                        bottom=Side(style='thin', color='000000')
+                    )
+
+                    # Format Sel Header
+                    for col_num in range(1, len(df_excel.columns) + 1):
+                        cell = worksheet.cell(row=1, column=col_num)
+                        cell.fill = header_fill
+                        cell.font = header_font
+                        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                        cell.border = thin_border
+
+                    # Format Sel Data (Border + Alignment)
+                    for row_idx in range(2, len(df_excel) + 2):
+                        for col_idx in range(1, len(df_excel.columns) + 1):
+                            cell = worksheet.cell(row=row_idx, column=col_idx)
+                            cell.border = thin_border
+                            cell.alignment = Alignment(vertical="center")
+
+                    # Penyesuaian Lebar Kolom Otomatis
+                    for col in worksheet.columns:
+                        max_len = max(len(str(cell.value or '')) for cell in col)
+                        col_letter = get_column_letter(col[0].column)
+                        worksheet.column_dimensions[col_letter].width = max(max_len + 3, 12)
+
+                return output.getvalue()
+
+            try:
+                excel_data = generate_excel()
+                st.download_button(
+                    label="📥 Download Laporan (Excel)",
+                    data=excel_data,
+                    file_name="Laporan_Progress_Proyek.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            except Exception as e:
+                st.error(f"Gagal memproses file Excel: {e}")
 
     with tab2:
         st.subheader("📜 Log Riwayat Input Progress Pekerjaan")
@@ -440,10 +501,10 @@ elif menu == "Input Progress Mingguan":
             img_col1, img_col2 = st.columns(2)
             with img_col1:
                 if existing_foto_1 and os.path.exists(str(existing_foto_1)):
-                    st.image(existing_foto_1, caption="Dokumentasi 1", use_column_width=True)
+                    st.image(existing_foto_1, caption="Dokumentasi 1", use_container_width=True)
             with img_col2:
                 if existing_foto_2 and os.path.exists(str(existing_foto_2)):
-                    st.image(existing_foto_2, caption="Dokumentasi 2", use_column_width=True)
+                    st.image(existing_foto_2, caption="Dokumentasi 2", use_container_width=True)
 
         with st.form("form_update_progress_mingguan"):
             col1, col2 = st.columns(2)
