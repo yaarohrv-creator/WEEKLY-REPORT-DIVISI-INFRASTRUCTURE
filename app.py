@@ -225,6 +225,9 @@ if menu == "Dashboard Progress":
             st.info("💡 Belum ada data progress untuk wilayah/kategori ini.")
             return
 
+        # Reset index agar index df_data dan edited_df sinkron sempurna (0, 1, 2, ...)
+        df_data = df_data.reset_index(drop=True)
+
         df_display = df_data.copy()
         df_display.insert(0, "Hapus", False)
         if 'No' not in df_display.columns:
@@ -263,7 +266,7 @@ if menu == "Dashboard Progress":
                 with get_db_connection() as conn:
                     cursor = conn.cursor()
                     for idx, row in edited_df.iterrows():
-                        real_id = df_data.iloc[idx]['real_id']
+                        real_id = df_data.loc[idx, 'real_id']
                         cursor.execute("""
                             UPDATE laporan_mingguan
                             SET progress_minggu_ini = ?, catatan = ?
@@ -273,7 +276,7 @@ if menu == "Dashboard Progress":
                 st.success("Perubahan data berhasil disimpan!")
                 st.rerun()
 
-        # TOMBOL HAPUS BARIS CENTANG (PASTI TERHAPUS BERSIH)
+        # TOMBOL HAPUS BARIS CENTANG (PASTI TERHAPUS BERSIH & BEBAS ERROR)
         with col_del_btn:
             if st.button("🗑️ Hapus Baris Yang Dicentang", key=f"btn_del_chk_{tab_key_prefix}", type="primary"):
                 rows_to_delete = edited_df[edited_df["Hapus"] == True]
@@ -283,9 +286,9 @@ if menu == "Dashboard Progress":
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
                         for idx in rows_to_delete.index:
-                            target_id = df_data.iloc[idx]['real_id']
-                            spk_num = df_data.iloc[idx]['Nomor SPK']
-                            j_pekerjaan = df_data.iloc[idx]['Jenis Pekerjaan']
+                            target_id = df_data.loc[idx, 'real_id']
+                            spk_num = df_data.loc[idx, 'Nomor SPK']
+                            j_pekerjaan = df_data.loc[idx, 'Jenis Pekerjaan']
                             
                             # Hapus dari laporan_mingguan
                             cursor.execute("DELETE FROM laporan_mingguan WHERE id = ?", (target_id,))
