@@ -316,7 +316,7 @@ if menu == MENU_DASHBOARD:
         except Exception:
             df_all = pd.DataFrame()
 
-  def render_dashboard_table(df_data, tab_key_prefix):
+ def render_dashboard_table(df_data, tab_key_prefix):
         column_order = [
             'No', 'Nomor SPK', 'Nama Kontraktor', 'Jenis Pekerjaan', 'Unit Proyek', 'Jumlah',
             'Nilai Kontrak Pekerjaan Ini (Rp)', 'Progress Minggu Lalu (%)', 'Progress Minggu Ini (%)',
@@ -340,7 +340,7 @@ if menu == MENU_DASHBOARD:
             use_container_width=True,
             hide_index=True,
             column_config={
-                "real_id": None, # ID disembunyikan dari UI
+                "real_id": None,  # Sembunyikan ID internal database dari tampilan UI
                 "Jumlah": st.column_config.NumberColumn("Jumlah", format="%d"),
                 "Nilai Kontrak Pekerjaan Ini (Rp)": st.column_config.NumberColumn("Nilai Kontrak (Rp)", format="Rp %d"),
                 "Progress Minggu Lalu (%)": st.column_config.NumberColumn("Progress Minggu Lalu (%)", format="%.2f %%"),
@@ -353,10 +353,10 @@ if menu == MENU_DASHBOARD:
         )
 
         # -------------------------------------------------------------------------
-        # PENGELOLAAN HAPUS DATA SECARA PERMANEN DARI DATABASE
+        # PROSES HAPUS PERMANEN DARI DATABASE SQLITE
         # -------------------------------------------------------------------------
         if not df_data.empty:
-            # Ambil indeks baris yang dicentang/dihapus pengguna dari state editor
+            # Mengambil daftar baris yang dicentang dari state Streamlit
             deleted_indices = []
             if editor_key in st.session_state and "deleted_rows" in st.session_state[editor_key]:
                 deleted_indices = st.session_state[editor_key]["deleted_rows"]
@@ -364,7 +364,7 @@ if menu == MENU_DASHBOARD:
             col_btn1, col_btn2 = st.columns([1, 4])
             
             with col_btn1:
-                # Tombol Simpan Perubahan Data
+                # Tombol simpan perubahan teks/nilai progress
                 if st.button("💾 Simpan Perubahan", key=f"btn_save_{tab_key_prefix}"):
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
@@ -382,7 +382,7 @@ if menu == MENU_DASHBOARD:
                     st.rerun()
 
             with col_btn2:
-                # Jika ada baris yang dicentang untuk dihapus, tampilkan tombol konfirmasi hapus permanen
+                # Menampilkan tombol khusus hapus permanen saat ada centang baris di UI
                 if deleted_indices:
                     if st.button(f"🗑️ Hapus Permanen ({len(deleted_indices)} Data Terpilih)", type="primary", key=f"btn_del_{tab_key_prefix}"):
                         with get_db_connection() as conn:
@@ -396,16 +396,16 @@ if menu == MENU_DASHBOARD:
                                 # 1. Hapus dari tabel master_spk
                                 cursor.execute("DELETE FROM master_spk WHERE no_spk = ? AND jenis_pekerjaan = ?", (no_spk, j_pek))
                                 
-                                # 2. Hapus dari tabel laporan_mingguan (baik berdasar ID maupun No SPK)
+                                # 2. Hapus dari tabel laporan_mingguan
                                 if pd.notna(real_id):
                                     cursor.execute("DELETE FROM laporan_mingguan WHERE id = ?", (real_id,))
                                 cursor.execute("DELETE FROM laporan_mingguan WHERE no_spk = ? AND jenis_pekerjaan = ?", (no_spk, j_pek))
                                 
-                                # 3. Hapus dari history_progress
+                                # 3. Hapus dari tabel history_progress
                                 cursor.execute("DELETE FROM history_progress WHERE no_spk = ? AND jenis_pekerjaan = ?", (no_spk, j_pek))
                                 
                             conn.commit()
-                        st.success("✅ Data berhasil dihapus secara permanen dari seluruh database!")
+                        st.success("✅ Data berhasil dibersihkan secara permanen dari seluruh tabel database!")
                         st.rerun()
 
             st.markdown("---")
