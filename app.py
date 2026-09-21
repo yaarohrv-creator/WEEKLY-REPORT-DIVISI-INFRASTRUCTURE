@@ -325,16 +325,17 @@ if menu == MENU_DASHBOARD:
 
         if df_data.empty:
             st.info("💡 Belum ada data progress untuk wilayah/kategori ini.")
-            # Buat DataFrame kosong dengan struktur kolom yang lengkap
-            df_display = pd.DataFrame(columns=column_order)
+            df_display = pd.DataFrame(columns=['real_id'] + column_order)
         else:
             df_display = df_data.copy()
+            # Reset index agar index baris visual (0, 1, 2...) konsisten dengan df_display
+            df_display = df_display.reset_index(drop=True)
             if 'No' not in df_display.columns:
                 df_display.insert(0, 'No', range(1, len(df_display) + 1))
 
-        existing_cols = [c for c in column_order if c in df_display.columns]
+        # Sertakan 'real_id' agar bisa dipakai untuk query DELETE di SQLite
+        existing_cols = [c for c in ['real_id'] + column_order if c in df_display.columns]
 
-        # data_editor akan tetap menampilkan header kolom meskipun baris data kosong
         editor_key = f"editor_{tab_key_prefix}"
         edited_df = st.data_editor(
             df_display[existing_cols],
@@ -342,7 +343,7 @@ if menu == MENU_DASHBOARD:
             use_container_width=True,
             hide_index=True,
             column_config={
-                "real_id": None,
+                "real_id": None,  # Kolom ID tetap tersembunyi di UI
                 "Jumlah": st.column_config.NumberColumn("Jumlah", format="%d"),
                 "Nilai Kontrak Pekerjaan Ini (Rp)": st.column_config.NumberColumn("Nilai Kontrak (Rp)", format="Rp %d"),
                 "Progress Minggu Lalu (%)": st.column_config.NumberColumn("Progress Minggu Lalu (%)", format="%.2f %%"),
@@ -354,33 +355,35 @@ if menu == MENU_DASHBOARD:
             key=editor_key
         )
 
-        # Otomatis hapus dari database SQLite saat dicentang/dihapus di tabel UI
+        # Penanganan Hapus Baris Berdasarkan real_id
         if not df_data.empty and editor_key in st.session_state and "deleted_rows" in st.session_state[editor_key]:
             deleted_indices = st.session_state[editor_key]["deleted_rows"]
             if deleted_indices:
                 with get_db_connection() as conn:
                     cursor = conn.cursor()
                     for idx in deleted_indices:
-                        row_to_del = df_data.iloc[idx]
+                        # Ambil data langsung dari df_display yang sudah di-reset index-nya
+                        row_to_del = df_display.iloc[idx]
                         real_id = row_to_del['real_id']
                         no_spk = row_to_del['Nomor SPK']
                         j_pek = row_to_del['Jenis Pekerjaan']
                         
-                        # Hapus dari database laporan & master
-                        cursor.execute("DELETE FROM laporan_mingguan WHERE id = ?", (real_id,))
-                        cursor.execute("DELETE FROM master_spk WHERE no_spk = ? AND jenis_pekerjaan = ?", (no_spk, j_pek))
+                        # Hapus dari database laporan_mingguan & master_spk
+                        if pd.notna(real_id):
+                            cursor.execute("DELETE FROM laporan_mingguan WHERE id = ?", (real_id,))
+                            cursor.execute("DELETE FROM master_spk WHERE no_spk = ? AND jenis_pekerjaan = ?", (no_spk, j_pek))
                     conn.commit()
-                st.success("✅ Data yang dicentang/dihapus berhasil dibersihkan dari database!")
+                st.success("✅ Data berhasil dihapus secara permanen dari database!")
                 st.rerun()
 
-        # Tombol Simpan Perubahan Data (hanya muncul jika ada data)
+        # Tombol Simpan Perubahan Data
         if not df_data.empty:
             if st.button("💾 Simpan Perubahan Data", key=f"btn_save_{tab_key_prefix}"):
                 with get_db_connection() as conn:
                     cursor = conn.cursor()
                     for idx, row in edited_df.iterrows():
-                        if idx < len(df_data):
-                            real_id = df_data.iloc[idx]['real_id']
+                        if idx < len(df_display):
+                            real_id = df_display.iloc[idx]['real_id']
                             if pd.notna(real_id):
                                 cursor.execute("""
                                     UPDATE laporan_mingguan
