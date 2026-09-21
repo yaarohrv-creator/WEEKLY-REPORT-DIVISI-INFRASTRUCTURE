@@ -371,45 +371,22 @@ if menu == MENU_DASHBOARD:
                 st.success("✅ Data yang dicentang/dihapus berhasil dibersihkan dari database!")
                 st.rerun()
 
-        col_sav, col_del = st.columns([2, 2])
-        with col_sav:
-            if st.button("💾 Simpan Perubahan Data", key=f"btn_save_{tab_key_prefix}"):
-                with get_db_connection() as conn:
-                    cursor = conn.cursor()
-                    for idx, row in edited_df.iterrows():
-                        if idx < len(df_data):
-                            real_id = df_data.iloc[idx]['real_id']
-                            if pd.notna(real_id):
-                                cursor.execute("""
-                                    UPDATE laporan_mingguan
-                                    SET progress_minggu_ini = ?, catatan = ?
-                                    WHERE id = ?
-                                """, (row.get('Progress Minggu Ini (%)'), row.get('Catatan Pekerjaan Terbaru'), real_id))
-                    conn.commit()
-                st.success("Perubahan data berhasil disimpan!")
-                st.rerun()
-
-        # --- FITUR HAPUS PERMANEN PEKERJAAN VIA DROPDOWN ---
-        with col_del:
-            spk_list = df_data[['Nomor SPK', 'Jenis Pekerjaan', 'real_id']].copy()
-            options_del = ["-- Pilih Pekerjaan yang Ingin Dihapus --"] + [
-                f"SPK: {r['Nomor SPK']} | {r['Jenis Pekerjaan']}" for _, r in spk_list.iterrows()
-            ]
-            selected_del = st.selectbox("Hapus Pekerjaan Permanen:", options_del, key=f"sel_del_{tab_key_prefix}")
-            
-            if st.button("🗑️ Hapus Pekerjaan Dipilih", key=f"btn_del_job_{tab_key_prefix}", type="primary"):
-                if selected_del != "-- Pilih Pekerjaan yang Ingin Dihapus --":
-                    idx_pilihan = options_del.index(selected_del) - 1
-                    target_row = spk_list.iloc[idx_pilihan]
-                    
-                    with get_db_connection() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute("DELETE FROM laporan_mingguan WHERE id = ?", (target_row['real_id'],))
-                        cursor.execute("DELETE FROM master_spk WHERE no_spk = ? AND jenis_pekerjaan = ?", 
-                                       (target_row['Nomor SPK'], target_row['Jenis Pekerjaan']))
-                        conn.commit()
-                    st.success(f"Pekerjaan {target_row['Jenis Pekerjaan']} ({target_row['Nomor SPK']}) berhasil dihapus permanen!")
-                    st.rerun()
+        # Tombol Simpan Perubahan Data
+        if st.button("💾 Simpan Perubahan Data", key=f"btn_save_{tab_key_prefix}"):
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                for idx, row in edited_df.iterrows():
+                    if idx < len(df_data):
+                        real_id = df_data.iloc[idx]['real_id']
+                        if pd.notna(real_id):
+                            cursor.execute("""
+                                UPDATE laporan_mingguan
+                                SET progress_minggu_ini = ?, catatan = ?
+                                WHERE id = ?
+                            """, (row.get('Progress Minggu Ini (%)'), row.get('Catatan Pekerjaan Terbaru'), real_id))
+                conn.commit()
+            st.success("Perubahan data berhasil disimpan!")
+            st.rerun()
 
         st.markdown("---")
         st.subheader("📥 Export & Download Laporan")
