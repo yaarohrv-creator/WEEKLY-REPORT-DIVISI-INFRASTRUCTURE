@@ -140,7 +140,7 @@ def init_db():
 conn = init_db()
 
 # ==========================================
-# FUNGSI EXPORT EXCEL (2 SHEET + LINK + FOTO)
+# FUNGSI EXPORT EXCEL (2 SHEET + LINK + FOTO RAPI)
 # ==========================================
 def generate_excel_full_feature(df):
     output = io.BytesIO()
@@ -189,12 +189,14 @@ def generate_excel_full_feature(df):
             worksheet_progress.column_dimensions[get_column_letter(col[0].column)].width = max(max_len + 3, 12)
 
         # ---------------------------------------------------------
-        # Layout & Penyisipan Gambar Visual (Sheet Foto Dokumentasi)
+        # Layout & Penyisipan Gambar Visual yang Rapi (Sheet Foto)
         # ---------------------------------------------------------
-        # Set Lebar Kolom: A(Judul), B(Foto 1), C(Foto 2)
-        worksheet_foto.column_dimensions['A'].width = 40
-        worksheet_foto.column_dimensions['B'].width = 50
-        worksheet_foto.column_dimensions['C'].width = 50
+        # 1. Tentukan Lebar Kolom dalam karakter (misal 50)
+        # Ini akan menjadi acuan lebar gambar.
+        LEBAR_KOLOM_FOTO = 50
+        worksheet_foto.column_dimensions['A'].width = 40 # Kolom Judul
+        worksheet_foto.column_dimensions['B'].width = LEBAR_KOLOM_FOTO # Kolom Foto 1
+        worksheet_foto.column_dimensions['C'].width = LEBAR_KOLOM_FOTO # Kolom Foto 2
 
         # Header Sheet Foto
         headers_foto = ["Jenis Pekerjaan / SPK", "Visual Foto Dokumentasi 1", "Visual Foto Dokumentasi 2"]
@@ -205,7 +207,7 @@ def generate_excel_full_feature(df):
             cell_h.alignment = align_center
             cell_h.border = border_standard
 
-        # Loop data untuk menyisipkan gambar fisik
+        # Loop data untuk menyisipkan gambar
         foto_row_idx = 2
         
         for index, row in df_excel.iterrows():
@@ -215,34 +217,50 @@ def generate_excel_full_feature(df):
             cell_j.alignment = Alignment(wrap_text=True, vertical="center", horizontal="left")
             cell_j.border = border_standard
             
-            # Set Tinggi Baris agar gambar muat (misal 250pt)
-            worksheet_foto.row_dimensions[foto_row_idx].height = 250
+            # --- Perbaikan Utama: Logika Resize & Pengaturan Tinggi Baris ---
+            max_image_height_in_row = 0 # Variabel untuk melacak tinggi gambar tertinggi di baris ini
 
-            # Fungsi Helper untuk menyisipkan satu gambar
-            def insert_image_visual(path, ws, current_row, current_col):
+            # Fungsi Helper internal untuk memproses dan menyisipkan satu gambar
+            def process_and_insert_image(path, ws, current_row, current_col, target_col_width):
+                nonlocal max_image_height_in_row # Gunakan variabel dari scope luar
                 cell_p = ws.cell(row=current_row, column=current_col)
                 cell_p.border = border_standard
                 
                 if path and os.path.exists(str(path)) and has_pil:
                     try:
-                        # Resize proporsional: set tinggi 300px, lebar menyesuaikan
                         pil_img = PILImage.open(path)
                         orig_w, orig_h = pil_img.size
-                        target_h = 300
-                        target_w = int(target_h * orig_w / orig_h)
                         
-                        pil_img_resized = pil_img.resize((target_w, target_h), PILImage.Resampling.LANCZOS)
+                        # A. Hitung Lebar Target dalam Pixel (Konversi kasar karakter Excel ke Pixel)
+                        # 1 karakter Excel kira-kira 7-8 pixel. Kita gunakan 7.5 sebagai rata-rata.
+                        # Kita kurangi sedikit (misal 5px) untuk padding agar tidak mentok garis.
+                        target_width_px = int((target_col_width * 7.5) - 5)
                         
+                        # B. Hitung Tinggi Target secara Proporsional (Resize Berdasarkan Lebar)
+                        ratio = target_width_px / orig_w
+                        target_height_px = int(orig_h * ratio)
+                        
+                        # C. Lakukan Resize Gambar menggunakan Pillow
+                        pil_img_resized = pil_img.resize((target_width_px, target_height_px), PILImage.Resampling.LANCZOS)
+                        
+                        # D. Simpan gambar yang di-resize ke memory buffer
                         img_buffer = io.BytesIO()
                         # Simpan format asli jika memungkinkan, default JPEG
                         img_format = pil_img.format if pil_img.format else 'JPEG'
                         pil_img_resized.save(img_buffer, format=img_format)
                         img_buffer.seek(0)
                         
+                        # E. Buat objek OpenPyXL Image dan sisipkan
                         opx_img = OpenPyXLImage(img_buffer)
-                        # Hitung kolom Excel (B=2, C=3)
                         col_letter = get_column_letter(current_col)
                         ws.add_image(opx_img, f'{col_letter}{current_row}')
+                        
+                        # F. Update tinggi maksimum untuk baris ini
+                        # Excel menggunakan satuan 'point' untuk tinggi baris. 1 pixel kira-kira 0.75 point.
+                        # Kita tambahkan sedikit padding (misal 10pt) agar rapi.
+                        height_in_points = (target_height_px * 0.75) + 10
+                        if height_in_points > max_image_height_in_row:
+                            max_image_height_in_row = height_in_points
                         
                     except Exception as e:
                         cell_p.value = f"Eror load gambar: {e}"
@@ -251,11 +269,18 @@ def generate_excel_full_feature(df):
                     cell_p.value = "Foto tidak tersedia / Library Pillow belum diinstal"
                     cell_p.alignment = align_center
 
-            # 2. Sisipkan Foto 1 (Kolom B = 2)
-            insert_image_visual(row['Foto 1'], worksheet_foto, foto_row_idx, 2)
+            # 2. Proses Foto 1 (Kolom B = 2)
+            process_and_insert_image(row['Foto 1'], worksheet_foto, foto_row_idx, 2, LEBAR_KOLOM_FOTO)
             
-            # 3. Sisipkan Foto 2 (Kolom C = 3)
-            insert_image_visual(row['Foto 2'], worksheet_foto, foto_row_idx, 3)
+            # 3. Proses Foto 2 (Kolom C = 3)
+            process_and_insert_image(row['Foto 2'], worksheet_foto, foto_row_idx, 3, LEBAR_KOLOM_FOTO)
+
+            # G. SET TINGGI BARIS secara otomatis berdasarkan gambar tertinggi
+            if max_image_height_in_row > 0:
+                worksheet_foto.row_dimensions[foto_row_idx].height = max_image_height_in_row
+            else:
+                # Jika tidak ada foto, gunakan tinggi default yang cukup untuk teks (misal 50pt)
+                worksheet_foto.row_dimensions[foto_row_idx].height = 50
 
             foto_row_idx += 1
 
