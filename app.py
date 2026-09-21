@@ -415,11 +415,27 @@ if menu == MENU_DASHBOARD:
         st.subheader("🌐 Semua Laporan Progress Proyek")
         render_dashboard_table(df_all, "semua")
 
-    with tab_history:
+   with tab_history:
         st.subheader("📜 Log Riwayat Update")
+        
+        # Ambil data dari database
         with get_db_connection() as conn:
             df_history = pd.read_sql_query("SELECT * FROM history_progress ORDER BY waktu_input DESC", conn)
+        
         st.dataframe(df_history, use_container_width=True)
+
+        st.markdown("---")
+        
+        # --- FITUR HAPUS RIWAYAT ---
+        col_h1, col_h2 = st.columns([3, 1])
+        with col_h2:
+            if st.button("🗑️ Hapus Semua Riwayat", type="primary", key="btn_clear_history"):
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM history_progress")
+                    conn.commit()
+                st.success("Semua data riwayat berhasil dihapus!")
+                st.rerun()
 
 # ---------------------------------------------------------
 # MENU 2: INPUT PROGRESS (BERDASARKAN TAB WILAYAH)
