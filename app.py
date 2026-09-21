@@ -485,44 +485,41 @@ elif menu == MENU_INPUT:
     with get_db_connection() as conn:
         df_master_all = pd.read_sql_query("SELECT * FROM master_spk", conn)
 
-    if df_master_all.empty:
-        st.warning("⚠️ Belum ada data Master SPK. Harap daftarkan SPK terlebih dahulu di menu Kelola Master SPK.")
-    else:
-        tab_i_bangka, tab_i_belitung = st.tabs([
-            "🏝️ Input Progress Bangka", 
-            "🏖️ Input Progress Belitung"
-        ])
+    tab_i_bangka, tab_i_belitung = st.tabs([
+        "🏝️ Input Progress Bangka", 
+        "🏖️ Input Progress Belitung"
+    ])
 
-        def render_input_form(df_master_wilayah, tab_key_prefix):
-            if df_master_wilayah.empty:
-                st.info("💡 Belum ada data master pekerjaan terdaftar untuk wilayah ini.")
-                return
+    def render_input_form(df_master_wilayah, tab_key_prefix):
+        if df_master_wilayah.empty:
+            st.info("💡 Belum ada data master pekerjaan terdaftar untuk wilayah ini. Silakan daftarkan SPK terlebih dahulu di menu Kelola Master SPK.")
+            return
 
-            list_spk_unique = sorted(df_master_wilayah['no_spk'].unique().tolist())
-            selected_spk_no = st.selectbox(
-                "Pilih Nomor SPK:",
-                list_spk_unique,
-                key=f"select_spk_no_{tab_key_prefix}"
-            )
+        list_spk_unique = sorted(df_master_wilayah['no_spk'].unique().tolist())
+        selected_spk_no = st.selectbox(
+            "Pilih Nomor SPK:",
+            list_spk_unique,
+            key=f"select_spk_no_{tab_key_prefix}"
+        )
 
-            df_spk_filtered = df_master_wilayah[df_master_wilayah['no_spk'] == selected_spk_no]
+        df_spk_filtered = df_master_wilayah[df_master_wilayah['no_spk'] == selected_spk_no]
 
-            list_pekerjaan = df_spk_filtered['jenis_pekerjaan'].unique().tolist()
-            selected_pekerjaan = st.selectbox(
-                "Pilih Jenis Pekerjaan (Tergroup berdasarkan SPK):",
-                list_pekerjaan,
-                key=f"select_pekerjaan_{tab_key_prefix}"
-            )
+        list_pekerjaan = df_spk_filtered['jenis_pekerjaan'].unique().tolist()
+        selected_pekerjaan = st.selectbox(
+            "Pilih Jenis Pekerjaan (Tergroup berdasarkan SPK):",
+            list_pekerjaan,
+            key=f"select_pekerjaan_{tab_key_prefix}"
+        )
 
-            spk_data_selected = df_spk_filtered[df_spk_filtered['jenis_pekerjaan'] == selected_pekerjaan].iloc[0]
+        spk_data_selected = df_spk_filtered[df_spk_filtered['jenis_pekerjaan'] == selected_pekerjaan].iloc[0]
 
-            try:
-                val_num = float(spk_data_selected['nilai_pekerjaan'])
-                nilai_formatted = f"Rp {val_num:,.2f}"
-            except (ValueError, TypeError):
-                nilai_formatted = "-"
+        try:
+            val_num = float(spk_data_selected['nilai_pekerjaan'])
+            nilai_formatted = f"Rp {val_num:,.2f}"
+        except (ValueError, TypeError):
+            nilai_formatted = "-"
 
-            st.info(f"""📌 **Detail SPK Dipilih:** 
+        st.info(f"""📌 **Detail SPK Dipilih:** 
 *   **Nomor SPK:** {spk_data_selected['no_spk']}
 *   **Kontraktor:** {spk_data_selected['kontraktor']}
 *   **Jenis Pekerjaan:** {spk_data_selected['jenis_pekerjaan']}
@@ -531,110 +528,116 @@ elif menu == MENU_INPUT:
 *   **Nilai Kontrak:** {nilai_formatted}
 """)
 
-            prog_terakhir = 0.0
-            catatan_terakhir = ""
-            existing_foto_1 = None
-            existing_foto_2 = None
+        prog_terakhir = 0.0
+        catatan_terakhir = ""
+        existing_foto_1 = None
+        existing_foto_2 = None
+        
+        with get_db_connection() as conn:
+            query_last = "SELECT progress_minggu_ini, catatan, foto_1, foto_2 FROM laporan_mingguan WHERE no_spk=? AND jenis_pekerjaan=?"
+            existing_prog_df = pd.read_sql_query(query_last, conn, params=(spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan']))
             
-            with get_db_connection() as conn:
-                query_last = "SELECT progress_minggu_ini, catatan, foto_1, foto_2 FROM laporan_mingguan WHERE no_spk=? AND jenis_pekerjaan=?"
-                existing_prog_df = pd.read_sql_query(query_last, conn, params=(spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan']))
-                
-                if not existing_prog_df.empty:
-                    prog_terakhir = float(existing_prog_df.iloc[0]['progress_minggu_ini'] or 0.0)
-                    catatan_terakhir = existing_prog_df.iloc[0]['catatan'] or ""
-                    existing_foto_1 = existing_prog_df.iloc[0]['foto_1']
-                    existing_foto_2 = existing_prog_df.iloc[0]['foto_2']
+            if not existing_prog_df.empty:
+                prog_terakhir = float(existing_prog_df.iloc[0]['progress_minggu_ini'] or 0.0)
+                catatan_terakhir = existing_prog_df.iloc[0]['catatan'] or ""
+                existing_foto_1 = existing_prog_df.iloc[0]['foto_1']
+                existing_foto_2 = existing_prog_df.iloc[0]['foto_2']
 
-            if existing_foto_1 or existing_foto_2:
-                st.markdown("**📸 Pratinjau Foto Dokumentasi Terakhir:**")
-                c_img1, c_img2 = st.columns(2)
-                with c_img1:
-                    if existing_foto_1 and os.path.exists(str(existing_foto_1)):
-                        st.image(existing_foto_1, caption="Foto Dokumentasi 1 (Minggu Lalu)", use_container_width=True)
-                with c_img2:
-                    if existing_foto_2 and os.path.exists(str(existing_foto_2)):
-                        st.image(existing_foto_2, caption="Foto Dokumentasi 2 (Minggu Lalu)", use_container_width=True)
+        if existing_foto_1 or existing_foto_2:
+            st.markdown("**📸 Pratinjau Foto Dokumentasi Terakhir:**")
+            c_img1, c_img2 = st.columns(2)
+            with c_img1:
+                if existing_foto_1 and os.path.exists(str(existing_foto_1)):
+                    st.image(existing_foto_1, caption="Foto Dokumentasi 1 (Minggu Lalu)", use_container_width=True)
+            with c_img2:
+                if existing_foto_2 and os.path.exists(str(existing_foto_2)):
+                    st.image(existing_foto_2, caption="Foto Dokumentasi 2 (Minggu Lalu)", use_container_width=True)
 
-            with st.form(f"form_input_week_{tab_key_prefix}", clear_on_submit=True):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.subheader("📝 Progress Minggu Ini")
-                    prog_ini = st.number_input(
-                        f"Progress Akumulatif Minggu Ini (%) - (Hingga Minggu Lalu: {prog_terakhir:.2f}%)", 
-                        min_value=prog_terakhir,
-                        max_value=100.0, 
-                        value=prog_terakhir,
-                        step=0.01,
-                        format="%.2f"
-                    )
-                    catatan_lap = st.text_area("Catatan/Kendala Pekerjaan Minggu Ini", value=catatan_terakhir)
-                
-                with col2:
-                    st.subheader("📷 Update Foto Dokumentasi (Upload Baru)")
-                    f_upload_1 = st.file_uploader("Upload Foto 1", type=["jpg", "jpeg", "png"], key=f"f1_{tab_key_prefix}")
-                    f_upload_2 = st.file_uploader("Upload Foto 2", type=["jpg", "jpeg", "png"], key=f"f2_{tab_key_prefix}")
-                
-                path_f1_final = existing_foto_1
-                path_f2_final = existing_foto_2
+        with st.form(f"form_input_week_{tab_key_prefix}", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("📝 Progress Minggu Ini")
+                prog_ini = st.number_input(
+                    f"Progress Akumulatif Minggu Ini (%) - (Hingga Minggu Lalu: {prog_terakhir:.2f}%)", 
+                    min_value=prog_terakhir,
+                    max_value=100.0, 
+                    value=prog_terakhir,
+                    step=0.01,
+                    format="%.2f"
+                )
+                catatan_lap = st.text_area("Catatan/Kendala Pekerjaan Minggu Ini", value=catatan_terakhir)
+            
+            with col2:
+                st.subheader("📷 Update Foto Dokumentasi (Upload Baru)")
+                f_upload_1 = st.file_uploader("Upload Foto 1", type=["jpg", "jpeg", "png"], key=f"f1_{tab_key_prefix}")
+                f_upload_2 = st.file_uploader("Upload Foto 2", type=["jpg", "jpeg", "png"], key=f"f2_{tab_key_prefix}")
+            
+            path_f1_final = existing_foto_1
+            path_f2_final = existing_foto_2
 
-                submit_btn = st.form_submit_button("💾 Simpan Laporan Minggu Ini")
-                
-                if submit_btn:
-                    if prog_ini < prog_terakhir:
-                        st.error("⚠️ Progress minggu ini tidak boleh lebih kecil dari minggu lalu (progress bersifat akumulatif)!")
-                    else:
-                        import time
-                        ts = int(time.time())
-                        spk_fniz = sanitize_filename(spk_data_selected['no_spk'])
+            submit_btn = st.form_submit_button("💾 Simpan Laporan Minggu Ini")
+            
+            if submit_btn:
+                if prog_ini < prog_terakhir:
+                    st.error("⚠️ Progress minggu ini tidak boleh lebih kecil dari minggu lalu (progress bersifat akumulatif)!")
+                else:
+                    import time
+                    ts = int(time.time())
+                    spk_fniz = sanitize_filename(spk_data_selected['no_spk'])
+                    
+                    if f_upload_1:
+                        path_f1_final = os.path.join(UPLOAD_DIR, f"{spk_fniz}_f1_{ts}.jpg")
+                        with open(path_f1_final, "wb") as f: 
+                            f.write(f_upload_1.getbuffer())
+
+                    if f_upload_2:
+                        path_f2_final = os.path.join(UPLOAD_DIR, f"{spk_fniz}_f2_{ts}.jpg")
+                        with open(path_f2_final, "wb") as f: 
+                            f.write(f_upload_2.getbuffer())
+                    
+                    penambahan_week = prog_ini - prog_terakhir
+
+                    with get_db_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("DELETE FROM laporan_mingguan WHERE no_spk=? AND jenis_pekerjaan=?", (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan']))
+                        cursor.execute("""
+                            INSERT INTO laporan_mingguan (
+                                no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan, 
+                                progress_minggu_lalu, progress_minggu_ini, catatan, foto_1, foto_2, waktu_input
+                            ) VALUES (?,?,?,?,?,?,?,?,?,?,?, CURRENT_TIMESTAMP)""", 
+                            (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan'], spk_data_selected['kontraktor'], spk_data_selected['unit'], int(spk_data_selected['jumlah'] or 1), spk_data_selected['nilai_pekerjaan'], prog_terakhir, prog_ini, catatan_lap, path_f1_final, path_f2_final))
                         
-                        if f_upload_1:
-                            path_f1_final = os.path.join(UPLOAD_DIR, f"{spk_fniz}_f1_{ts}.jpg")
-                            with open(path_f1_final, "wb") as f: 
-                                f.write(f_upload_1.getbuffer())
-
-                        if f_upload_2:
-                            path_f2_final = os.path.join(UPLOAD_DIR, f"{spk_fniz}_f2_{ts}.jpg")
-                            with open(path_f2_final, "wb") as f: 
-                                f.write(f_upload_2.getbuffer())
+                        cursor.execute("""
+                            INSERT INTO history_progress (
+                                no_spk, jenis_pekerjaan, kontraktor, unit, 
+                                progress_minggu_lalu, progress_minggu_ini, progres_penambahan, catatan, foto_1, foto_2, waktu_input
+                            ) VALUES (?,?,?,?,?,?,?,?,?,?, CURRENT_TIMESTAMP)""",
+                            (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan'], spk_data_selected['kontraktor'], spk_data_selected['unit'], prog_terakhir, prog_ini, penambahan_week, catatan_lap, path_f1_final, path_f2_final))
                         
-                        penambahan_week = prog_ini - prog_terakhir
+                        conn.commit()
+                    st.success(f"✅ Laporan mingguan untuk SPK '{selected_spk_no}' - '{selected_pekerjaan}' berhasil disimpan!")
+                    st.rerun()
 
-                        with get_db_connection() as conn:
-                            cursor = conn.cursor()
-                            cursor.execute("DELETE FROM laporan_mingguan WHERE no_spk=? AND jenis_pekerjaan=?", (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan']))
-                            cursor.execute("""
-                                INSERT INTO laporan_mingguan (
-                                    no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan, 
-                                    progress_minggu_lalu, progress_minggu_ini, catatan, foto_1, foto_2, waktu_input
-                                ) VALUES (?,?,?,?,?,?,?,?,?,?,?, CURRENT_TIMESTAMP)""", 
-                                (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan'], spk_data_selected['kontraktor'], spk_data_selected['unit'], int(spk_data_selected['jumlah'] or 1), spk_data_selected['nilai_pekerjaan'], prog_terakhir, prog_ini, catatan_lap, path_f1_final, path_f2_final))
-                            
-                            cursor.execute("""
-                                INSERT INTO history_progress (
-                                    no_spk, jenis_pekerjaan, kontraktor, unit, 
-                                    progress_minggu_lalu, progress_minggu_ini, progres_penambahan, catatan, foto_1, foto_2, waktu_input
-                                ) VALUES (?,?,?,?,?,?,?,?,?,?, CURRENT_TIMESTAMP)""",
-                                (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan'], spk_data_selected['kontraktor'], spk_data_selected['unit'], prog_terakhir, prog_ini, penambahan_week, catatan_lap, path_f1_final, path_f2_final))
-                            
-                            conn.commit()
-                        st.success(f"✅ Laporan mingguan untuk SPK '{selected_spk_no}' - '{selected_pekerjaan}' berhasil disimpan!")
-                        st.rerun()
-
-        with tab_i_bangka:
-            st.subheader("🏝️ Input Progress - Wilayah Bangka")
+    with tab_i_bangka:
+        st.subheader("🏝️ Input Progress - Wilayah Bangka")
+        if df_master_all.empty:
+            df_bangka_master = pd.DataFrame()
+        else:
             df_bangka_master = df_master_all[df_master_all['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)]
-            render_input_form(df_bangka_master, "bangka")
+        render_input_form(df_bangka_master, "bangka")
 
-        with tab_i_belitung:
-            st.subheader("🏖️ Input Progress - Wilayah Belitung")
+    with tab_i_belitung:
+        st.subheader("🏖️ Input Progress - Wilayah Belitung")
+        if df_master_all.empty:
+            df_belitung_master = pd.DataFrame()
+        else:
             pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
             df_belitung_master = df_master_all[
                 df_master_all['unit'].astype(str).str.contains(pola_belitung, case=False, na=False) |
                 (~df_master_all['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
             ]
-            render_input_form(df_belitung_master, "belitung")     
+        render_input_form(df_belitung_master, "belitung")  
 
 # ---------------------------------------------------------
 # MENU 3: KELOLA MASTER
