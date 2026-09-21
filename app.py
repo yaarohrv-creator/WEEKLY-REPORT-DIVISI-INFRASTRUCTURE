@@ -376,23 +376,31 @@ if menu == MENU_DASHBOARD:
         except Exception as e:
             st.error(f"Gagal memproses file Excel: {e}")
 
+    # --- TAB BANGKA ---
     with tab_bangka:
         st.subheader("📍 Laporan Progress Proyek - Wilayah Bangka")
         if not df_all.empty:
-            df_bangka = df_all[df_all['Unit Proyek'].str.contains('BANGKA|BKA', case=False, na=False)]
+            df_bangka = df_all[df_all['Unit Proyek'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)]
             render_dashboard_table(df_bangka, "bangka")
 
+    # --- TAB BELITUNG (PERBAIKAN FILTER LENGKAP) ---
     with tab_belitung:
         st.subheader("📍 Laporan Progress Proyek - Wilayah Belitung")
         if not df_all.empty:
-            df_belitung = df_all[df_all['Unit Proyek'].str.contains('BELITUNG|BLT', case=False, na=False)]
+            # Filter menggunakan pola unit Belitung atau unit non-Bangka
+            pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
+            df_belitung = df_all[
+                df_all['Unit Proyek'].astype(str).str.contains(pola_belitung, case=False, na=False) |
+                (~df_all['Unit Proyek'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
+            ]
             render_dashboard_table(df_belitung, "belitung")
 
+    # --- TAB SEMUA ---
     with tab_semua:
         st.subheader("🌐 Semua Laporan Progress Proyek")
         render_dashboard_table(df_all, "semua")
 
-    # --- TAB RIWAYAT DENGAN FITUR HAPUS DATA ---
+    # --- TAB RIWAYAT ---
     with tab_history:
         st.subheader("📜 Log Riwayat Update")
         with get_db_connection() as conn:
@@ -406,7 +414,6 @@ if menu == MENU_DASHBOARD:
             
             col_del_single, col_del_all = st.columns([2, 1])
 
-            # FITUR 1: Hapus berdasarkan ID tertentu
             with col_del_single:
                 id_pilihan = st.selectbox(
                     "Pilih ID Riwayat yang ingin dihapus:",
@@ -421,9 +428,8 @@ if menu == MENU_DASHBOARD:
                     st.success(f"Data riwayat ID {id_pilihan} berhasil dihapus!")
                     st.rerun()
 
-            # FITUR 2: Hapus seluruh riwayat
             with col_del_all:
-                st.write("") # Memberi jeda spasi vertical
+                st.write("")
                 st.write("")
                 if st.button("🚨 Hapus Semua Riwayat", type="primary", key="btn_del_all_hist"):
                     with get_db_connection() as conn:
@@ -580,12 +586,16 @@ elif menu == MENU_INPUT:
 
         with tab_i_bangka:
             st.subheader("🏝️ Input Progress - Wilayah Bangka")
-            df_bangka_master = df_master_all[df_master_all['unit'].str.contains('BANGKA|BKA', case=False, na=False)]
+            df_bangka_master = df_master_all[df_master_all['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)]
             render_input_form(df_bangka_master, "bangka")
 
         with tab_i_belitung:
             st.subheader("🏖️ Input Progress - Wilayah Belitung")
-            df_belitung_master = df_master_all[df_master_all['unit'].str.contains('BELITUNG|BLT', case=False, na=False)]
+            pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
+            df_belitung_master = df_master_all[
+                df_master_all['unit'].astype(str).str.contains(pola_belitung, case=False, na=False) |
+                (~df_master_all['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
+            ]
             render_input_form(df_belitung_master, "belitung")     
 
 # ---------------------------------------------------------
@@ -666,13 +676,17 @@ elif menu == MENU_MASTER:
     with tab_m_bangka:
         st.subheader("📍 Master Data - Wilayah Bangka")
         if not df_master.empty:
-            df_m_bangka = df_master[df_master['Unit Proyek'].str.contains('BANGKA|BKA', case=False, na=False)]
+            df_m_bangka = df_master[df_master['Unit Proyek'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)]
             render_master_table(df_m_bangka, "bangka")
 
     with tab_m_belitung:
         st.subheader("📍 Master Data - Wilayah Belitung")
         if not df_master.empty:
-            df_m_belitung = df_master[df_master['Unit Proyek'].str.contains('BELITUNG|BLT', case=False, na=False)]
+            pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
+            df_m_belitung = df_master[
+                df_master['Unit Proyek'].astype(str).str.contains(pola_belitung, case=False, na=False) |
+                (~df_master['Unit Proyek'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
+            ]
             render_master_table(df_m_belitung, "belitung")
 
     with tab_m_tambah:
