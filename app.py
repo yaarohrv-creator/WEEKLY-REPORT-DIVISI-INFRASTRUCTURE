@@ -140,7 +140,7 @@ def init_db():
 conn = init_db()
 
 # ==========================================
-# FUNGSI EXPORT EXCEL (2 SHEET + LINK + FOTO RAPI)
+# FUNGSI EXPORT EXCEL (LINK INTERAKTIF + FOTO RAPI)
 # ==========================================
 def generate_excel_full_feature(df):
     output = io.BytesIO()
@@ -150,8 +150,18 @@ def generate_excel_full_feature(df):
         # ---------------------------------------------------------
         df_excel = df.drop(columns=['real_id'], errors='ignore').copy()
         
-        # Lembar Utama (Laporan Progress) - Hanya Data Teks
-        df_progress = df_excel.drop(columns=['Foto 1', 'Foto 2'], errors='ignore')
+        # Lembar Utama (Laporan Progress) - Tanpa Kolom Path Foto Panjang
+        df_progress = df_excel.drop(columns=['Foto 1', 'Foto 2'], errors='ignore').copy()
+        
+        # --- PERBAIKAN 1: Sisipkan Kolom 'Dokumentasi' Kosong ---
+        # Kita sisipkan kolom 'Dokumentasi' kosong setelah 'Catatan Pekerjaan Terbaru'
+        try:
+            target_col_idx = df_progress.columns.get_loc('Catatan Pekerjaan Terbaru') + 1
+            df_progress.insert(target_col_idx, 'Dokumentasi', '') 
+        except Exception:
+            # Jika kolom catatan tidak ditemukan, tambahkan di paling akhir
+            df_progress['Dokumentasi'] = ''
+
         df_progress.to_excel(writer, index=False, sheet_name='Laporan Progress')
         
         worksheet_progress = writer.sheets['Laporan Progress']
@@ -184,15 +194,19 @@ def generate_excel_full_feature(df):
                 cell.border = border_standard
                 cell.alignment = Alignment(vertical="center")
 
+        # Auto-adjust lebar kolom (Sheet Progress) - Kecuali Dokumentasi
         for col in worksheet_progress.columns:
-            max_len = max(len(str(cell.value or '')) for cell in col)
-            worksheet_progress.column_dimensions[get_column_letter(col[0].column)].width = max(max_len + 3, 12)
+            header_name = col[0].value
+            if header_name != 'Dokumentasi':
+                max_len = max(len(str(cell.value or '')) for cell in col)
+                worksheet_progress.column_dimensions[get_column_letter(col[0].column)].width = max(max_len + 3, 12)
+            else:
+                # Set lebar fix untuk kolom Dokumentasi
+                worksheet_progress.column_dimensions[get_column_letter(col[0].column)].width = 15
 
         # ---------------------------------------------------------
-        # Layout & Penyisipan Gambar Visual yang Rapi (Sheet Foto)
+        # Layout & Penyisipan Gambar Visual (Sheet Foto Dokumentasi)
         # ---------------------------------------------------------
-        # 1. Tentukan Lebar Kolom dalam karakter (misal 50)
-        # Ini akan menjadi acuan lebar gambar.
         LEBAR_KOLOM_FOTO = 50
         worksheet_foto.column_dimensions['A'].width = 40 # Kolom Judul
         worksheet_foto.column_dimensions['B'].width = LEBAR_KOLOM_FOTO # Kolom Foto 1
@@ -207,82 +221,100 @@ def generate_excel_full_feature(df):
             cell_h.alignment = align_center
             cell_h.border = border_standard
 
-        # Loop data untuk menyisipkan gambar
+        # Map untuk menyimpan lokasi tujuan hyperlink (Key: "No", Value: "No Baris Excel Sheet Foto")
+        job_map_targets = {}
+        
+        # Loop data untuk menyisipkan gambar fisik
         foto_row_idx = 2
         
         for index, row in df_excel.iterrows():
-            # 1. Judul Pekerjaan (Kolom A)
+            # Tulis Judul Pekerjaan (Kolom A)
             judul_gabungan = f"SPK: {row['Nomor SPK']}\n\nPekerjaan: {row['Jenis Pekerjaan']}"
             cell_j = worksheet_foto.cell(row=foto_row_idx, column=1, value=judul_gabungan)
             cell_j.alignment = Alignment(wrap_text=True, vertical="center", horizontal="left")
             cell_j.border = border_standard
             
-            # --- Perbaikan Utama: Logika Resize & Pengaturan Tinggi Baris ---
-            max_image_height_in_row = 0 # Variabel untuk melacak tinggi gambar tertinggi di baris ini
+            # --- PERBAIKAN 2: Simpan Target Lokasi untuk Hyperlink ---
+            # Kita simpan Nomor Baris Excel saat ini di Sheet Foto untuk setiap 'No' urut
+            if 'No' in row:
+                job_map_targets[row['No']] = foto_row_idx
 
-            # Fungsi Helper internal untuk memproses dan menyisipkan satu gambar
-            def process_and_insert_image(path, ws, current_row, current_col, target_col_width):
-                nonlocal max_image_height_in_row # Gunakan variabel dari scope luar
+            # Set Tinggi Baris agar foto muat
+            worksheet_foto.row_dimensions[foto_row_idx].height = 250
+
+            # Fungsi Helper untuk menyisipkan satu gambar fisik (dengan resize)
+            def insert_image_visual_resized(path, ws, current_row, current_col, target_col_width):
                 cell_p = ws.cell(row=current_row, column=current_col)
                 cell_p.border = border_standard
                 
                 if path and os.path.exists(str(path)) and has_pil:
                     try:
+                        # Resize proporsional: set tinggi 300px, lebar menyesuaikan
                         pil_img = PILImage.open(path)
                         orig_w, orig_h = pil_img.size
                         
-                        # A. Hitung Lebar Target dalam Pixel (Konversi kasar karakter Excel ke Pixel)
-                        # 1 karakter Excel kira-kira 7-8 pixel. Kita gunakan 7.5 sebagai rata-rata.
-                        # Kita kurangi sedikit (misal 5px) untuk padding agar tidak mentok garis.
+                        # Hitung target pixel (konversi kasar karakter ke pixel, kurangi padding)
                         target_width_px = int((target_col_width * 7.5) - 5)
                         
-                        # B. Hitung Tinggi Target secara Proporsional (Resize Berdasarkan Lebar)
-                        ratio = target_width_px / orig_w
-                        target_height_px = int(orig_h * ratio)
+                        # Hitung tinggi target secara proporsional
+                        target_height_px = int((orig_h / orig_w) * target_width_px)
                         
-                        # C. Lakukan Resize Gambar menggunakan Pillow
                         pil_img_resized = pil_img.resize((target_width_px, target_height_px), PILImage.Resampling.LANCZOS)
                         
-                        # D. Simpan gambar yang di-resize ke memory buffer
                         img_buffer = io.BytesIO()
-                        # Simpan format asli jika memungkinkan, default JPEG
                         img_format = pil_img.format if pil_img.format else 'JPEG'
                         pil_img_resized.save(img_buffer, format=img_format)
                         img_buffer.seek(0)
                         
-                        # E. Buat objek OpenPyXL Image dan sisipkan
                         opx_img = OpenPyXLImage(img_buffer)
                         col_letter = get_column_letter(current_col)
                         ws.add_image(opx_img, f'{col_letter}{current_row}')
-                        
-                        # F. Update tinggi maksimum untuk baris ini
-                        # Excel menggunakan satuan 'point' untuk tinggi baris. 1 pixel kira-kira 0.75 point.
-                        # Kita tambahkan sedikit padding (misal 10pt) agar rapi.
-                        height_in_points = (target_height_px * 0.75) + 10
-                        if height_in_points > max_image_height_in_row:
-                            max_image_height_in_row = height_in_points
                         
                     except Exception as e:
                         cell_p.value = f"Eror load gambar: {e}"
                         cell_p.alignment = align_center
                 else:
-                    cell_p.value = "Foto tidak tersedia / Library Pillow belum diinstal"
+                    cell_p.value = "Foto tidak tersedia / Pillow belum diinstal"
                     cell_p.alignment = align_center
 
-            # 2. Proses Foto 1 (Kolom B = 2)
-            process_and_insert_image(row['Foto 1'], worksheet_foto, foto_row_idx, 2, LEBAR_KOLOM_FOTO)
+            # Sisipkan Foto 1 (Kolom B = 2)
+            insert_image_visual_resized(row['Foto 1'], worksheet_foto, foto_row_idx, 2, LEBAR_KOLOM_FOTO)
             
-            # 3. Proses Foto 2 (Kolom C = 3)
-            process_and_insert_image(row['Foto 2'], worksheet_foto, foto_row_idx, 3, LEBAR_KOLOM_FOTO)
-
-            # G. SET TINGGI BARIS secara otomatis berdasarkan gambar tertinggi
-            if max_image_height_in_row > 0:
-                worksheet_foto.row_dimensions[foto_row_idx].height = max_image_height_in_row
-            else:
-                # Jika tidak ada foto, gunakan tinggi default yang cukup untuk teks (misal 50pt)
-                worksheet_foto.row_dimensions[foto_row_idx].height = 50
+            # Sisipkan Foto 2 (Kolom C = 3)
+            insert_image_visual_resized(row['Foto 2'], worksheet_foto, foto_row_idx, 3, LEBAR_KOLOM_FOTO)
 
             foto_row_idx += 1
+
+        # ---------------------------------------------------------
+        # --- PERBAIKAN 3: Buat Hyperlink di Sheet 'Laporan Progress' ---
+        # ---------------------------------------------------------
+        # Temukan indeks kolom 'No' dan 'Dokumentasi' (1-based untuk openpyxl)
+        try:
+            no_col_idx = df_progress.columns.get_loc('No') + 1
+            doc_col_idx = df_progress.columns.get_loc('Dokumentasi') + 1
+        except Exception:
+            no_col_idx, doc_col_idx = None, None
+
+        if no_col_idx and doc_col_idx:
+            # Loop data di Sheet Laporan Progress mulai dari baris 2
+            for p_row_idx in range(2, worksheet_progress.max_row + 1):
+                # Ambil nilai 'No' di baris ini
+                no_value = worksheet_progress.cell(row=p_row_idx, column=no_col_idx).value
+                
+                # Cek apakah 'No' ini ada di map target kita (apakah punya foto)
+                if no_value in job_map_targets:
+                    # Ambil baris tujuan di Sheet Foto
+                    target_photo_row = job_map_targets[no_value]
+                    
+                    # Tulis teks link di kolom 'Dokumentasi'
+                    cell_link = worksheet_progress.cell(row=p_row_idx, column=doc_col_idx, value="Lihat Foto")
+                    
+                    # Jadikan hyperlink internal mengarah ke Sheet Foto, Kolom A
+                    cell_link.hyperlink = f"#'Foto Dokumentasi'!A{target_photo_row}"
+                    
+                    # Terapkan styling link biru
+                    cell_link.font = blue_link_font
+                    cell_link.alignment = align_center
 
     return output.getvalue()
 
