@@ -9,7 +9,8 @@ import re  # Digunakan untuk sanitasi nama file
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-# --- LIBRARY UNTUK MEMPROSES GAMBAR ---
+# --- LIBRARY UNTUK MEMPROSES GAMBAR (WAJIB INSTAL PILImage) ---
+# Perintah instalasi: pip install Pillow
 try:
     from PIL import Image as PILImage
     from openpyxl.drawing.image import Image as OpenPyXLImage
@@ -38,6 +39,7 @@ if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 def check_password():
+    # Password default adalah 123456, bisa diubah di streamlit secrets
     password_benar = st.secrets.get("APP_PASSWORD", "123456")
     if st.session_state["password_input"] == password_benar:
         st.session_state["authenticated"] = True
@@ -59,6 +61,7 @@ if not st.session_state["authenticated"]:
 def get_db_connection():
     return sqlite3.connect('proyek_v2.db')
 
+# Helper function untuk membersihkan nama file dari karakter ilegal
 def sanitize_filename(filename):
     return re.sub(r'[\\/*?:"<>|]', "", filename).replace(" ", "_")
 
@@ -81,6 +84,7 @@ def init_db():
         )
     ''')
 
+    # Migrasi otomatis jika kolom catatan belum ada
     cursor.execute("PRAGMA table_info(master_spk)")
     cols_mast = [col[1] for col in cursor.fetchall()]
     if 'catatan' not in cols_mast:
@@ -128,18 +132,20 @@ def init_db():
 init_db()
 
 # ==========================================
-# FUNGSI EXPORT EXCEL
+# FUNGSI EXPORT EXCEL (LINK INTERAKTIF + FOTO RAPI)
 # ==========================================
 def generate_excel_full_feature(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        # ---------------------------------------------------------
+        # Persiapan Data
+        # ---------------------------------------------------------
         df_excel = df.drop(columns=['real_id'], errors='ignore').copy()
         
-        df_progress = df_excel.drop(
-            columns=['Foto 1', 'Foto 2', 'Pratinjau Foto 1', 'Pratinjau Foto 2'], 
-            errors='ignore'
-        ).copy()
+        # Lembar Utama (Laporan Progress) - Tanpa Kolom Path Foto Panjang
+        df_progress = df_excel.drop(columns=['Foto 1', 'Foto 2'], errors='ignore').copy()
         
+        # Sisipkan Kolom 'Dokumentasi' Kosong setelah 'Catatan Pekerjaan Terbaru'
         try:
             target_col_idx = df_progress.columns.get_loc('Catatan Pekerjaan Terbaru') + 1
             df_progress.insert(target_col_idx, 'Dokumentasi', '') 
@@ -149,15 +155,21 @@ def generate_excel_full_feature(df):
         df_progress.to_excel(writer, index=False, sheet_name='Laporan Progress')
         
         worksheet_progress = writer.sheets['Laporan Progress']
+        
+        # Lembar Kedua (Foto Dokumentasi) - Layout Khusus Gambar
         workbook = writer.book
         worksheet_foto = workbook.create_sheet(title='Foto Dokumentasi')
         
+        # ---------------------------------------------------------
+        # Styling & Hyperlink Internal (Sheet Progress)
+        # ---------------------------------------------------------
         header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
         header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
         border_standard = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
         align_center = Alignment(horizontal="center", vertical="center")
         blue_link_font = Font(color="0000FF", underline="single")
 
+        # Format Header Sheet Progress
         for col_num in range(1, worksheet_progress.max_column + 1):
             cell = worksheet_progress.cell(row=1, column=col_num)
             cell.fill = header_fill
@@ -165,6 +177,7 @@ def generate_excel_full_feature(df):
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             cell.border = border_standard
 
+        # Format Sel Data & Auto-adjust lebar kolom (Sheet Progress)
         for row_idx in range(2, worksheet_progress.max_row + 1):
             for col_idx in range(1, worksheet_progress.max_column + 1):
                 cell = worksheet_progress.cell(row=row_idx, column=col_idx)
@@ -179,11 +192,15 @@ def generate_excel_full_feature(df):
             else:
                 worksheet_progress.column_dimensions[get_column_letter(col[0].column)].width = 15
 
+        # ---------------------------------------------------------
+        # Layout & Penyisipan Gambar Visual yang Rapi (Sheet Foto)
+        # ---------------------------------------------------------
         LEBAR_KOLOM_FOTO = 50
         worksheet_foto.column_dimensions['A'].width = 40 
         worksheet_foto.column_dimensions['B'].width = LEBAR_KOLOM_FOTO 
         worksheet_foto.column_dimensions['C'].width = LEBAR_KOLOM_FOTO 
 
+        # Header Sheet Foto
         headers_foto = ["Jenis Pekerjaan / SPK", "Visual Foto Dokumentasi 1", "Visual Foto Dokumentasi 2"]
         for col_num, header_text in enumerate(headers_foto, 1):
             cell_h = worksheet_foto.cell(row=1, column=col_num, value=header_text)
@@ -192,10 +209,14 @@ def generate_excel_full_feature(df):
             cell_h.alignment = align_center
             cell_h.border = border_standard
 
+        # Map untuk menyimpan lokasi tujuan hyperlink
         job_map_targets = {}
+        
+        # Loop data untuk menyisipkan gambar fisik
         foto_row_idx = 2
         
         for index, row in df_excel.iterrows():
+            # Tulis Judul Pekerjaan (Kolom A)
             judul_gabungan = f"SPK: {row['Nomor SPK']}\n\nPekerjaan: {row['Jenis Pekerjaan']}"
             cell_j = worksheet_foto.cell(row=foto_row_idx, column=1, value=judul_gabungan)
             cell_j.alignment = Alignment(wrap_text=True, vertical="center", horizontal="left")
@@ -206,12 +227,14 @@ def generate_excel_full_feature(df):
 
             worksheet_foto.row_dimensions[foto_row_idx].height = 250
 
+            # Fungsi Helper untuk menyisipkan satu gambar fisik (dengan resize)
             def insert_image_visual_resized(path, ws, current_row, current_col, target_col_width):
                 cell_p = ws.cell(row=current_row, column=current_col)
                 cell_p.border = border_standard
                 
                 if path and os.path.exists(str(path)) and has_pil:
                     try:
+                        # Resize proporsional
                         pil_img = PILImage.open(path)
                         orig_w, orig_h = pil_img.size
                         
@@ -233,7 +256,7 @@ def generate_excel_full_feature(df):
                         cell_p.value = f"Eror load gambar: {e}"
                         cell_p.alignment = align_center
                 else:
-                    cell_p.value = "Foto tidak tersedia"
+                    cell_p.value = "Foto tidak tersedia / Pillow belum diinstal"
                     cell_p.alignment = align_center
 
             insert_image_visual_resized(row.get('Pratinjau Foto 1'), worksheet_foto, foto_row_idx, 2, LEBAR_KOLOM_FOTO)
@@ -241,6 +264,7 @@ def generate_excel_full_feature(df):
 
             foto_row_idx += 1
 
+        # Buat Hyperlink di Sheet 'Laporan Progress'
         try:
             no_col_idx = df_progress.columns.get_loc('No') + 1
             doc_col_idx = df_progress.columns.get_loc('Dokumentasi') + 1
@@ -279,7 +303,7 @@ if st.sidebar.button("🚪 Logout"):
     st.rerun()
 
 # ---------------------------------------------------------
-# MENU 1: DASHBOARD PROGRESS
+# MENU 1: DASHBOARD PROGRESS (BERDASARKAN WILAYAH)
 # ---------------------------------------------------------
 if menu == MENU_DASHBOARD:
     st.title("📊 WEEKLY REPORT DIVISI INFRASTRUCTURE")
@@ -392,49 +416,14 @@ if menu == MENU_DASHBOARD:
         st.subheader("🌐 Semua Laporan Progress Proyek")
         render_dashboard_table(df_all, "semua")
 
-    # --- TAB RIWAYAT DENGAN FITUR HAPUS DATA ---
     with tab_history:
         st.subheader("📜 Log Riwayat Update")
         with get_db_connection() as conn:
             df_history = pd.read_sql_query("SELECT * FROM history_progress ORDER BY waktu_input DESC", conn)
-        
         st.dataframe(df_history, use_container_width=True)
 
-        if not df_history.empty:
-            st.markdown("---")
-            st.subheader("🗑️ Pengelolaan Data Riwayat")
-            
-            col_del_single, col_del_all = st.columns([2, 1])
-
-            # FITUR 1: Hapus berdasarkan ID tertentu
-            with col_del_single:
-                id_pilihan = st.selectbox(
-                    "Pilih ID Riwayat yang ingin dihapus:",
-                    df_history['id'].tolist(),
-                    key="select_history_id_del"
-                )
-                if st.button("🗑️ Hapus ID Dipilih", type="secondary", key="btn_del_single_hist"):
-                    with get_db_connection() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute("DELETE FROM history_progress WHERE id = ?", (id_pilihan,))
-                        conn.commit()
-                    st.success(f"Data riwayat ID {id_pilihan} berhasil dihapus!")
-                    st.rerun()
-
-            # FITUR 2: Hapus seluruh riwayat
-            with col_del_all:
-                st.write("") # Memberi jeda spasi vertical
-                st.write("")
-                if st.button("🚨 Hapus Semua Riwayat", type="primary", key="btn_del_all_hist"):
-                    with get_db_connection() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute("DELETE FROM history_progress")
-                        conn.commit()
-                    st.success("Seluruh data riwayat berhasil dibersihkan!")
-                    st.rerun()
-
 # ---------------------------------------------------------
-# MENU 2: INPUT PROGRESS
+# MENU 2: INPUT PROGRESS (BERDASARKAN TAB WILAYAH)
 # ---------------------------------------------------------
 elif menu == MENU_INPUT:
     st.title("📝 Input Laporan Progress Mingguan Berdasarkan SPK")
@@ -589,7 +578,7 @@ elif menu == MENU_INPUT:
             render_input_form(df_belitung_master, "belitung")     
 
 # ---------------------------------------------------------
-# MENU 3: KELOLA MASTER
+# MENU 3: KELOLA MASTER (DENGAN TAB WILAYAH)
 # ---------------------------------------------------------
 elif menu == MENU_MASTER:
     st.title("⚙️ Kelola Master Data Pekerjaan / SPK")
@@ -709,6 +698,6 @@ elif menu == MENU_MASTER:
                         st.success(f"✅ Master SPK '{no_spk}' - '{jenis_pekerjaan}' berhasil ditambahkan!")
                         st.rerun()
                     except sqlite3.IntegrityError:
-                        st.error("⚠️ Kombinasi Nomor SPK dan Jenis Pekerjaan tersebut sudah terdaftar di database!")
+                        st.error("⚠️ Pasangan Nomor SPK dan Jenis Pekerjaan tersebut sudah ada di database!")
                     except Exception as e:
-                        st.error(f"⚠️ Terjadi kesalahan saat menyimpan data: {e}")
+                        st.error(f"Terjadi kesalahan saat menambahkan data: {e}")
