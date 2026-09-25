@@ -22,8 +22,8 @@ except ImportError:
 st.set_page_config(page_title="Sistem Progress Proyek", layout="wide")
 
 # Logo Aplikasi
-if os.path.exists("logo.png"):
-    st.sidebar.image("logo.png", use_container_width=True)
+# if os.path.exists("logo.png"):
+#    st.sidebar.image("logo.png", use_container_width=True)
 
 # Folder Penyimpanan Foto
 UPLOAD_DIR = "uploads"
