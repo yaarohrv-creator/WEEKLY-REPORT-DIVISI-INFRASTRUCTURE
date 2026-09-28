@@ -625,15 +625,13 @@ elif menu == MENU_INPUT:
                     ts = int(time.time())
                     spk_fniz = sanitize_filename(spk_data_selected['no_spk'])
                     
-                    if f_upload_1:
-                        path_f1_final = os.path.join(UPLOAD_DIR, f"{spk_fniz}_f1_{ts}.jpg")
-                        with open(path_f1_final, "wb") as f: 
-                            f.write(f_upload_1.getbuffer())
+                   if f_upload_1:
+    res1 = cloudinary.uploader.upload(f_upload_1, folder="weekly_reports")
+    path_f1_final = res1.get("secure_url")  # Menghasilkan URL gambar permanen
 
-                    if f_upload_2:
-                        path_f2_final = os.path.join(UPLOAD_DIR, f"{spk_fniz}_f2_{ts}.jpg")
-                        with open(path_f2_final, "wb") as f: 
-                            f.write(f_upload_2.getbuffer())
+if f_upload_2:
+    res2 = cloudinary.uploader.upload(f_upload_2, folder="weekly_reports")
+    path_f2_final = res2.get("secure_url")  # Menghasilkan URL gambar permanen
                     
                     penambahan_week = prog_ini - prog_terakhir
 
