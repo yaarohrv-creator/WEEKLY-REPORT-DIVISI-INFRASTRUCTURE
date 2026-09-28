@@ -53,12 +53,22 @@ if not st.session_state["authenticated"]:
     st.text_input("Password Akses:", type="password", key="password_input", on_change=check_password)
     st.info("💡 Silakan hubungi admin untuk mendapatkan password akses.")
     st.stop()
+# =========================================================
+# KONFIGURASI DATABASE POSTGRESQL (NEON) & CLOUDINARY
+# =========================================================
+db_url = st.secrets["DB_URL"]
+engine = create_engine(db_url)
 
-# ---------------------------------------------------------
-# FUNGSIONALITAS DATABASE SQLITE (proyek_v2.db)
-# ---------------------------------------------------------
+cloudinary.config(
+    cloud_name=st.secrets["CLOUD_NAME"],
+    api_key=st.secrets["API_KEY"],
+    api_secret=st.secrets["API_SECRET"],
+    secure=True
+)
+
 def get_db_connection():
-    return sqlite3.connect('proyek_v2.db')
+    # Mengembalikan koneksi dari SQLAlchemy Engine agar kompatibel dengan pandas/cursor
+    return engine.connect()
 
 def sanitize_filename(filename):
     return re.sub(r'[\\/*?:"<>|]', "", str(filename)).replace(" ", "_")
