@@ -76,66 +76,66 @@ def get_db_connection():
     return psycopg2.connect(st.secrets["postgres"]["url"])
 
 def init_db():
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                # 1. TABEL MASTER_SPK
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS master_spk (
+                        id SERIAL PRIMARY KEY,
+                        no_spk TEXT,
+                        kontraktor TEXT,
+                        jenis_pekerjaan TEXT,
+                        unit TEXT,
+                        jumlah INTEGER DEFAULT 1,
+                        nilai_spk_utama REAL DEFAULT 0,
+                        nilai_pekerjaan REAL DEFAULT 0,
+                        catatan TEXT,
+                        UNIQUE(no_spk, jenis_pekerjaan)
+                    );
+                ''')
 
-    # TABEL MASTER_SPK
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS master_spk (
-            id SERIAL PRIMARY KEY,
-            no_spk TEXT,
-            kontraktor TEXT,
-            jenis_pekerjaan TEXT,
-            unit TEXT,
-            jumlah INTEGER DEFAULT 1,
-            nilai_spk_utama REAL DEFAULT 0,
-            nilai_pekerjaan REAL DEFAULT 0,
-            catatan TEXT,
-            UNIQUE(no_spk, jenis_pekerjaan)
-        )
-    ''')
-    conn.commit()
-    conn.close()
+                # 2. TABEL LAPORAN_MINGGUAN
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS laporan_mingguan (
+                        id SERIAL PRIMARY KEY,
+                        waktu_input TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        no_spk TEXT,
+                        jenis_pekerjaan TEXT,
+                        kontraktor TEXT,
+                        unit TEXT,
+                        jumlah INTEGER,
+                        nilai_pekerjaan REAL,
+                        progress_minggu_lalu REAL,
+                        progress_minggu_ini REAL,
+                        catatan TEXT,
+                        foto_1 TEXT,
+                        foto_2 TEXT
+                    );
+                ''')
 
-    # 2. TABEL LAPORAN_MINGGUAN
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS laporan_mingguan (
-            id SERIAL PRIMARY KEY,
-            waktu_input TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            no_spk TEXT,
-            jenis_pekerjaan TEXT,
-            kontraktor TEXT,
-            unit TEXT,
-            jumlah INTEGER,
-            nilai_pekerjaan REAL,
-            progress_minggu_lalu REAL,
-            progress_minggu_ini REAL,
-            catatan TEXT,
-            foto_1 TEXT,
-            foto_2 TEXT
-        )
-    ''')
+                # 3. TABEL HISTORY_PROGRESS
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS history_progress (
+                        id SERIAL PRIMARY KEY,
+                        waktu_input TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        no_spk TEXT,
+                        jenis_pekerjaan TEXT,
+                        kontraktor TEXT,
+                        unit TEXT,
+                        progress_minggu_lalu REAL,
+                        progress_minggu_ini REAL,
+                        progres_penambahan REAL,
+                        catatan TEXT,
+                        foto_1 TEXT,
+                        foto_2 TEXT
+                    );
+                ''')
+                conn.commit()
+    except Exception as e:
+        st.error(f"⚠️ Gagal inisialisasi database: {e}")
 
-    # 3. TABEL HISTORY_PROGRESS
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS history_progress (
-            id SERIAL PRIMARY KEY,
-            waktu_input TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            no_spk TEXT,
-            jenis_pekerjaan TEXT,
-            kontraktor TEXT,
-            unit TEXT,
-            progress_minggu_lalu REAL,
-            progress_minggu_ini REAL,
-            progres_penambahan REAL,
-            catatan TEXT,
-            foto_1 TEXT,
-            foto_2 TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
+# Jalankan inisialisasi database
 init_db()
 # ==========================================
 # FUNGSI EXPORT EXCEL
