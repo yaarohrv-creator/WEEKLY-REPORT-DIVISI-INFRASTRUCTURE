@@ -137,18 +137,14 @@ def init_db():
 
 # Jalankan inisialisasi database
 init_db()
-# ==========================================
-# FUNGSI EXPORT EXCEL
-# ==========================================
+# ---------------------------------------------------------
+# EXPORT EXCEL FUNCTION
+# ---------------------------------------------------------
 def generate_excel_full_feature(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_excel = df.drop(columns=['real_id'], errors='ignore').copy()
-        
-        df_progress = df_excel.drop(
-            columns=['Foto 1', 'Foto 2', 'Pratinjau Foto 1', 'Pratinjau Foto 2'], 
-            errors='ignore'
-        ).copy()
+        df_progress = df_excel.drop(columns=['Foto 1', 'Foto 2', 'Pratinjau Foto 1', 'Pratinjau Foto 2'], errors='ignore').copy()
         
         try:
             target_col_idx = df_progress.columns.get_loc('Catatan Pekerjaan Terbaru') + 1
@@ -157,7 +153,6 @@ def generate_excel_full_feature(df):
             df_progress['Dokumentasi'] = ''
 
         df_progress.to_excel(writer, index=False, sheet_name='Laporan Progress')
-        
         worksheet_progress = writer.sheets['Laporan Progress']
         workbook = writer.book
         worksheet_foto = workbook.create_sheet(title='Foto Dokumentasi')
@@ -172,14 +167,8 @@ def generate_excel_full_feature(df):
             cell = worksheet_progress.cell(row=1, column=col_num)
             cell.fill = header_fill
             cell.font = header_font
-            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.alignment = align_center
             cell.border = border_standard
-
-        for row_idx in range(2, worksheet_progress.max_row + 1):
-            for col_idx in range(1, worksheet_progress.max_column + 1):
-                cell = worksheet_progress.cell(row=row_idx, column=col_idx)
-                cell.border = border_standard
-                cell.alignment = Alignment(vertical="center")
 
         for col in worksheet_progress.columns:
             header_name = col[0].value
@@ -216,48 +205,44 @@ def generate_excel_full_feature(df):
 
             worksheet_foto.row_dimensions[foto_row_idx].height = 250
 
-            def insert_image_visual_resized(path, ws, current_row, current_col, target_col_width):
+            def insert_image_visual(path, ws, current_row, current_col, target_col_width):
                 cell_p = ws.cell(row=current_row, column=current_col)
                 cell_p.border = border_standard
                 
-                if path and os.path.exists(str(path)) and has_pil:
+                if path and str(path).startswith("http"):
+                    cell_p.value = f"Link: {path}"
+                    cell_p.font = blue_link_font
+                    cell_p.hyperlink = str(path)
+                    cell_p.alignment = align_center
+                elif path and os.path.exists(str(path)) and has_pil:
                     try:
                         pil_img = PILImage.open(path)
                         orig_w, orig_h = pil_img.size
-                        
                         target_width_px = int((target_col_width * 7.5) - 5)
                         target_height_px = int((orig_h / orig_w) * target_width_px)
                         
                         pil_img_resized = pil_img.resize((target_width_px, target_height_px), PILImage.Resampling.LANCZOS)
-                        
                         img_buffer = io.BytesIO()
-                        img_format = pil_img.format if pil_img.format else 'JPEG'
-                        pil_img_resized.save(img_buffer, format=img_format)
+                        pil_img_resized.save(img_buffer, format='JPEG')
                         img_buffer.seek(0)
                         
                         opx_img = OpenPyXLImage(img_buffer)
                         col_letter = get_column_letter(current_col)
                         ws.add_image(opx_img, f'{col_letter}{current_row}')
-                        
                     except Exception as e:
-                        cell_p.value = f"Eror load gambar: {e}"
-                        cell_p.alignment = align_center
+                        cell_p.value = f"Error: {e}"
                 else:
                     cell_p.value = "Foto tidak tersedia"
                     cell_p.alignment = align_center
 
-            insert_image_visual_resized(row.get('Pratinjau Foto 1'), worksheet_foto, foto_row_idx, 2, LEBAR_KOLOM_FOTO)
-            insert_image_visual_resized(row.get('Pratinjau Foto 2'), worksheet_foto, foto_row_idx, 3, LEBAR_KOLOM_FOTO)
+            insert_image_visual(row.get('Pratinjau Foto 1'), worksheet_foto, foto_row_idx, 2, LEBAR_KOLOM_FOTO)
+            insert_image_visual(row.get('Pratinjau Foto 2'), worksheet_foto, foto_row_idx, 3, LEBAR_KOLOM_FOTO)
 
             foto_row_idx += 1
 
         try:
             no_col_idx = df_progress.columns.get_loc('No') + 1
             doc_col_idx = df_progress.columns.get_loc('Dokumentasi') + 1
-        except Exception:
-            no_col_idx, doc_col_idx = None, None
-
-        if no_col_idx and doc_col_idx:
             for p_row_idx in range(2, worksheet_progress.max_row + 1):
                 no_value = worksheet_progress.cell(row=p_row_idx, column=no_col_idx).value
                 if no_value in job_map_targets:
@@ -266,6 +251,8 @@ def generate_excel_full_feature(df):
                     cell_link.hyperlink = f"#'Foto Dokumentasi'!A{target_photo_row}"
                     cell_link.font = blue_link_font
                     cell_link.alignment = align_center
+        except Exception:
+            pass
 
     return output.getvalue()
 
@@ -513,301 +500,264 @@ if menu == MENU_DASHBOARD:
                     st.success("Seluruh data riwayat berhasil dibersihkan!")
                     st.rerun()
 
-# ---------------------------------------------------------
-# MENU 2: INPUT PROGRESS
-# ---------------------------------------------------------
-elif menu == MENU_INPUT:
-    st.title("📝 Input Laporan Progress Mingguan Berdasarkan SPK")
-    st.markdown("---")
+# =========================================================
+# 1. HALAMAN DASHBOARD PROGRESS (ISOLASI DENGAN IF)
+# =========================================================
+if menu == MENU_DASHBOARD:
+    st.title("📊 WEEKLY REPORT DIVISI INFRASTRUCTURE")
 
-    with get_db_connection() as conn:
-        df_master_all = pd.read_sql_query("SELECT * FROM master_spk", conn)
-
-    tab_i_bangka, tab_i_belitung = st.tabs([
-        "🏝️ Input Progress Bangka", 
-        "🏖️ Input Progress Belitung"
+    tab_bangka, tab_belitung, tab_semua, tab_history = st.tabs([
+        "🌴 Laporan Progress Bangka", 
+        "⛵ Laporan Progress Belitung", 
+        "📋 Semua Progress Proyek", 
+        "📜 Riwayat / History Update"
     ])
 
-    def render_input_form(df_master_wilayah, tab_key_prefix):
-        if df_master_wilayah.empty:
-            st.info("💡 Belum ada data master pekerjaan terdaftar untuk wilayah ini. Silakan daftarkan SPK terlebih dahulu di menu Kelola Master SPK.")
-            return
+    query_view = """
+        SELECT 
+            id AS real_id,
+            waktu_input AS "Waktu Input Terbaru",
+            no_spk AS "Nomor SPK",
+            kontraktor AS "Nama Kontraktor",
+            jenis_pekerjaan AS "Jenis Pekerjaan",
+            unit AS "Unit Proyek",
+            CAST(COALESCE(jumlah, 1) AS INTEGER) AS "Jumlah",
+            nilai_pekerjaan AS "Nilai Kontrak (Rp)",
+            progress_minggu_lalu AS "Progress Minggu Lalu (%)",
+            progress_minggu_ini AS "Progress Minggu Ini (%)",
+            (COALESCE(progress_minggu_ini, 0) - COALESCE(progress_minggu_lalu, 0)) AS "Selisih / Varian (%)",
+            catatan AS "Catatan Pekerjaan Terbaru",
+            foto_1 AS "Pratinjau Foto 1",
+            foto_2 AS "Pratinjau Foto 2"
+        FROM laporan_mingguan
+        ORDER BY id ASC
+    """
 
-        list_spk_unique = sorted(df_master_wilayah['no_spk'].unique().tolist())
-        selected_spk_no = st.selectbox(
-            "Pilih Nomor SPK:",
-            list_spk_unique,
-            key=f"select_spk_no_{tab_key_prefix}"
-        )
-
-        df_spk_filtered = df_master_wilayah[df_master_wilayah['no_spk'] == selected_spk_no]
-
-        list_pekerjaan = df_spk_filtered['jenis_pekerjaan'].unique().tolist()
-        selected_pekerjaan = st.selectbox(
-            "Pilih Jenis Pekerjaan (Tergroup berdasarkan SPK):",
-            list_pekerjaan,
-            key=f"select_pekerjaan_{tab_key_prefix}"
-        )
-
-        spk_data_selected = df_spk_filtered[df_spk_filtered['jenis_pekerjaan'] == selected_pekerjaan].iloc[0]
-
-        try:
-            val_num = float(spk_data_selected['nilai_pekerjaan'])
-            nilai_formatted = f"Rp {val_num:,.2f}"
-        except (ValueError, TypeError):
-            nilai_formatted = "-"
-
-        st.info(f"""📌 **Detail SPK Dipilih:** 
-*   **Nomor SPK:** {spk_data_selected['no_spk']}
-*   **Kontraktor:** {spk_data_selected['kontraktor']}
-*   **Jenis Pekerjaan:** {spk_data_selected['jenis_pekerjaan']}
-*   **Unit/Wilayah:** {spk_data_selected['unit']}
-*   **Jumlah:** {int(spk_data_selected['jumlah'] or 1)}
-*   **Nilai Kontrak:** {nilai_formatted}
-""")
-
-        prog_terakhir = 0.0
-        catatan_terakhir = ""
-        existing_foto_1 = None
-        existing_foto_2 = None
-        
-        with get_db_connection() as conn:
-            query_last = "SELECT progress_minggu_ini, catatan, foto_1, foto_2 FROM laporan_mingguan WHERE no_spk=? AND jenis_pekerjaan=?"
-            existing_prog_df = pd.read_sql_query(query_last, conn, params=(spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan']))
-            
-            if not existing_prog_df.empty:
-                prog_terakhir = float(existing_prog_df.iloc[0]['progress_minggu_ini'] or 0.0)
-                catatan_terakhir = existing_prog_df.iloc[0]['catatan'] or ""
-                existing_foto_1 = existing_prog_df.iloc[0]['foto_1']
-                existing_foto_2 = existing_prog_df.iloc[0]['foto_2']
-
-        if existing_foto_1 or existing_foto_2:
-            st.markdown("**📸 Pratinjau Foto Dokumentasi Terakhir:**")
-            c_img1, c_img2 = st.columns(2)
-            with c_img1:
-                if existing_foto_1 and os.path.exists(str(existing_foto_1)):
-                    st.image(existing_foto_1, caption="Foto Dokumentasi 1 (Minggu Lalu)", use_container_width=True)
-            with c_img2:
-                if existing_foto_2 and os.path.exists(str(existing_foto_2)):
-                    st.image(existing_foto_2, caption="Foto Dokumentasi 2 (Minggu Lalu)", use_container_width=True)
-
-        with st.form(f"form_input_week_{tab_key_prefix}", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("📝 Progress Minggu Ini")
-                prog_ini = st.number_input(
-                    f"Progress Akumulatif Minggu Ini (%) - (Hingga Minggu Lalu: {prog_terakhir:.2f}%)", 
-                    min_value=prog_terakhir,
-                    max_value=100.0, 
-                    value=prog_terakhir,
-                    step=0.01,
-                    format="%.2f"
-                )
-                catatan_lap = st.text_area("Catatan/Kendala Pekerjaan Minggu Ini", value=catatan_terakhir)
-            
-            with col2:
-                st.subheader("📷 Update Foto Dokumentasi (Upload Baru)")
-                f_upload_1 = st.file_uploader("Upload Foto 1", type=["jpg", "jpeg", "png"], key=f"f1_{tab_key_prefix}")
-                f_upload_2 = st.file_uploader("Upload Foto 2", type=["jpg", "jpeg", "png"], key=f"f2_{tab_key_prefix}")
-            
-            path_f1_final = existing_foto_1
-            path_f2_final = existing_foto_2
-
-            submit_btn = st.form_submit_button("💾 Simpan Laporan Minggu Ini")
-            
-            if submit_btn:
-                if prog_ini < prog_terakhir:
-                    st.error("⚠️ Progress minggu ini tidak boleh lebih kecil dari minggu lalu!")
-                else:
-                    path_f1_final = existing_foto_1
-                    path_f2_final = existing_foto_2
-
-                    # Upload Foto 1 ke Cloudinary
-                    if f_upload_1:
-                        res_1 = cloudinary.uploader.upload(f_upload_1)
-                        path_f1_final = res_1.get("secure_url")
-
-                    # Upload Foto 2 ke Cloudinary
-                    if f_upload_2:
-                        res_2 = cloudinary.uploader.upload(f_upload_2)
-                        path_f2_final = res_2.get("secure_url")
-
-                    penambahan_week = prog_ini - prog_terakhir
-
-                    with get_db_connection() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute("DELETE FROM laporan_mingguan WHERE no_spk=%s AND jenis_pekerjaan=%s", (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan']))
-                        cursor.execute("""
-                            INSERT INTO laporan_mingguan (
-                                no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan, 
-                                progress_minggu_lalu, progress_minggu_ini, catatan, foto_1, foto_2, waktu_input
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)""", 
-                            (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan'], spk_data_selected['kontraktor'], spk_data_selected['unit'], int(spk_data_selected['jumlah'] or 1), spk_data_selected['nilai_pekerjaan'], prog_terakhir, prog_ini, catatan_lap, path_f1_final, path_f2_final))
-                        
-                        cursor.execute("""
-                            INSERT INTO history_progress (
-                                no_spk, jenis_pekerjaan, kontraktor, unit, 
-                                progress_minggu_lalu, progress_minggu_ini, progres_penambahan, catatan, foto_1, foto_2, waktu_input
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)""",
-                            (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan'], spk_data_selected['kontraktor'], spk_data_selected['unit'], prog_terakhir, prog_ini, penambahan_week, catatan_lap, path_f1_final, path_f2_final))
-                        
-                        conn.commit()
-                    st.success(f"✅ Laporan progress untuk SPK {spk_data_selected['no_spk']} berhasil disimpan!")
-                    st.rerun()
-
-    with tab_i_bangka:
-        st.subheader("🏝️ Input Progress - Wilayah Bangka")
-        if df_master_all.empty:
-            df_bangka_master = pd.DataFrame()
-        else:
-            df_bangka_master = df_master_all[df_master_all['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)]
-        render_input_form(df_bangka_master, "bangka")
-
-    with tab_i_belitung:
-        st.subheader("🏖️ Input Progress - Wilayah Belitung")
-        if df_master_all.empty:
-            df_belitung_master = pd.DataFrame()
-        else:
-            pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
-            df_belitung_master = df_master_all[
-                df_master_all['unit'].astype(str).str.contains(pola_belitung, case=False, na=False) |
-                (~df_master_all['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
-            ]
-        render_input_form(df_belitung_master, "belitung")  
-
-# =========================================================
-# HALAMAN: KELOLA MASTER DATA PEKERJAAN / SPK
-# =========================================================
-st.title("⚙️ Kelola Master Data Pekerjaan / SPK")
-
-# Tiga Tab Sesuai Tampilan UI
-tab_bangka, tab_belitung, tab_tambah = st.tabs([
-    "🌴 Master Data Bangka", 
-    "⛵ Master Data Belitung", 
-    "➕ Tambah SPK / Pekerjaan Baru"
-])
-
-# ---------------------------------------------------------
-# FUNGSI UNTUK MENAMPILKAN TABEL MASTER BERDASARKAN WILAYAH
-# ---------------------------------------------------------
-def render_master_wilayah(wilayah_name):
-    st.subheader(f"📋 Master Data Wilayah {wilayah_name.title()}")
-    
     with get_db_connection() as conn:
-        query = "SELECT * FROM master_spk WHERE unit = %s ORDER BY no_spk ASC, id ASC"
-        df = pd.read_sql_query(query, conn, params=(wilayah_name,))
-    
-    if df.empty:
-        st.info(f"Belum ada data SPK untuk wilayah {wilayah_name.title()}. Silakan tambah data di tab 'Tambah SPK / Pekerjaan Baru'.")
-    else:
-        # Menampilkan Data Terkelompok berdasarkan Nomor SPK
-        grouped_spk = df.groupby("no_spk")
-        
-        for no_spk, group in grouped_spk:
-            kontraktor = group["kontraktor"].iloc[0]
-            nilai_utama = group["nilai_spk_utama"].iloc[0] if "nilai_spk_utama" in group.columns else 0
-            
-            # Tampilan Card SPK
-            with st.expander(f"📌 **Nomor SPK: {no_spk}** | Kontraktor: {kontraktor}", expanded=True):
-                st.markdown(f"**Total Nilai Kontrak SPK Utama:** `Rp {nilai_utama:,.2f}`")
-                st.markdown("**Rincian Pekerjaan & Nilai Kontrak:**")
-                
-                # Tabel Rincian Pekerjaan
-                show_df = group[["jenis_pekerjaan", "nilai_pekerjaan", "jumlah", "catatan"]].copy()
-                show_df.columns = ["Jenis Pekerjaan", "Nilai Kontrak Pekerjaan (Rp)", "Jumlah Unit", "Catatan"]
-                
-                st.dataframe(
-                    show_df,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Nilai Kontrak Pekerjaan (Rp)": st.column_config.NumberColumn(format="Rp %'d")
-                    }
-                )
+        try:
+            df_all = pd.read_sql_query(query_view, conn)
+        except Exception:
+            df_all = pd.DataFrame()
 
-# ---------------------------------------------------------
-# TAB 1: MASTER DATA BANGKA
-# ---------------------------------------------------------
-with tab_bangka:
-    render_master_wilayah("BANGKA")
+    def render_dashboard_table(df_data, tab_key_prefix):
+        column_order = [
+            'No', 'Nomor SPK', 'Nama Kontraktor', 'Jenis Pekerjaan', 'Unit Proyek', 'Jumlah',
+            'Nilai Kontrak (Rp)', 'Progress Minggu Lalu (%)', 'Progress Minggu Ini (%)',
+            'Selisih / Varian (%)', 'Catatan Pekerjaan Terbaru', 'Pratinjau Foto 1', 'Pratinjau Foto 2'
+        ]
 
-# ---------------------------------------------------------
-# TAB 2: MASTER DATA BELITUNG
-# ---------------------------------------------------------
-with tab_belitung:
-    render_master_wilayah("BELITUNG")
+        if df_data.empty:
+            st.info("💡 Belum ada data progress untuk wilayah/kategori ini.")
+            df_display = pd.DataFrame(columns=['real_id'] + column_order)
+        else:
+            df_display = df_data.copy().reset_index(drop=True)
+            if 'No' not in df_display.columns:
+                df_display.insert(0, 'No', range(1, len(df_display) + 1))
 
-# ---------------------------------------------------------
-# TAB 3: FORM TAMBAH SPK BARU
-# ---------------------------------------------------------
-with tab_tambah:
-    st.subheader("➕ Form Tambah SPK / Pekerjaan Baru")
-    
-    with st.form("form_tambah_spk_bulk", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        with col1:
-            f_no_spk = st.text_input("Nomor SPK:", placeholder="Contoh: 048/PSM2/BPRE/BPSL/JKTO/INF/III/2026")
-            f_kontraktor = st.text_input("Nama Kontraktor:", placeholder="Contoh: PT. Sinar Bangka")
-            f_catatan = st.text_area("Catatan / Keterangan Tambahan:", placeholder="Opsional...")
-        
-        with col2:
-            f_unit = st.selectbox("Unit / Wilayah Proyek:", ["BANGKA", "BELITUNG"])
-            f_jumlah = st.number_input("Jumlah Unit/Volume:", min_value=1, value=1, step=1)
-            f_total_nilai_spk = st.number_input("Total Nilai Kontrak SPK Utama (Rp):", min_value=0.0, step=1000000.0)
+        existing_cols = [c for c in ['real_id'] + column_order if c in df_display.columns]
 
-        st.markdown("---")
-        st.markdown("### 📋 Rincian Jenis Pekerjaan & Nilai Kontrak")
-        st.caption("Tambahkan rincian pekerjaan di bawah ini. Klik tombol `+` di kanan bawah tabel untuk menambah baris baru.")
-
-        # Tabel input dinamis rincian pekerjaan
-        default_data = pd.DataFrame([
-            {"Jenis Pekerjaan": "rumah a", "Nilai Kontrak Pekerjaan (Rp)": 10000000.0},
-            {"Jenis Pekerjaan": "rumah b", "Nilai Kontrak Pekerjaan (Rp)": 5000000.0},
-        ])
-        
+        editor_key = f"editor_{tab_key_prefix}"
         edited_df = st.data_editor(
-            default_data,
+            df_display[existing_cols],
             num_rows="dynamic",
             use_container_width=True,
+            hide_index=True,
             column_config={
-                "Jenis Pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan", required=True),
-                "Nilai Kontrak Pekerjaan (Rp)": st.column_config.NumberColumn("Nilai Kontrak Pekerjaan (Rp)", min_value=0, format="Rp %'d")
+                "real_id": None,
+                "Jumlah": st.column_config.NumberColumn("Jumlah", format="%d"),
+                "Nilai Kontrak (Rp)": st.column_config.NumberColumn("Nilai Kontrak (Rp)", format="Rp %d"),
+                "Progress Minggu Lalu (%)": st.column_config.NumberColumn("Progress Minggu Lalu (%)", format="%.2f %%"),
+                "Progress Minggu Ini (%)": st.column_config.NumberColumn("Progress Minggu Ini (%)", format="%.2f %%"),
+                "Selisih / Varian (%)": st.column_config.NumberColumn("Selisih / Varian (%)", format="%.2f %%"),
+                "Pratinjau Foto 1": st.column_config.ImageColumn("Pratinjau Foto 1"),
+                "Pratinjau Foto 2": st.column_config.ImageColumn("Pratinjau Foto 2"),
+            },
+            key=editor_key
+        )
+
+        if not df_data.empty:
+            if st.button("💾 Simpan Perubahan Data", key=f"btn_save_{tab_key_prefix}"):
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    for idx, row in edited_df.iterrows():
+                        if idx < len(df_display):
+                            real_id = df_display.iloc[idx].get('real_id')
+                            if pd.notna(real_id):
+                                cursor.execute("""
+                                    UPDATE laporan_mingguan
+                                    SET progress_minggu_ini = %s, catatan = %s
+                                    WHERE id = %s
+                                """, (row.get('Progress Minggu Ini (%)'), row.get('Catatan Pekerjaan Terbaru'), int(real_id)))
+                    conn.commit()
+                st.success("✅ Perubahan data berhasil disimpan!")
+                st.rerun()
+
+            st.markdown("---")
+            try:
+                excel_bytes = generate_excel_full_feature(df_display)
+                st.download_button(
+                    label=f"📥 Download Laporan ({tab_key_prefix.capitalize()}) - Excel",
+                    data=excel_bytes,
+                    file_name=f"Laporan_Progress_{tab_key_prefix}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"dl_{tab_key_prefix}"
+                )
+            except Exception as e:
+                st.error(f"Gagal memproses file Excel: {e}")
+
+    with tab_bangka:
+        st.subheader("🌐 Semua Laporan Progress Proyek - Wilayah Bangka")
+        if not df_all.empty:
+            df_bangka = df_all[df_all['Unit Proyek'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)]
+            render_dashboard_table(df_bangka, "bangka")
+        else:
+            render_dashboard_table(pd.DataFrame(), "bangka")
+
+    with tab_belitung:
+        st.subheader("🌐 Semua Laporan Progress Proyek - Wilayah Belitung")
+        if not df_all.empty:
+            pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
+            df_belitung = df_all[
+                df_all['Unit Proyek'].astype(str).str.contains(pola_belitung, case=False, na=False) |
+                (~df_all['Unit Proyek'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
+            ]
+            render_dashboard_table(df_belitung, "belitung")
+        else:
+            render_dashboard_table(pd.DataFrame(), "belitung")
+
+    with tab_semua:
+        st.subheader("🌐 Semua Laporan Progress Proyek")
+        render_dashboard_table(df_all, "semua")
+
+    with tab_history:
+        st.subheader("📜 Log Riwayat Update")
+        with get_db_connection() as conn:
+            df_history = pd.read_sql_query("SELECT * FROM history_progress ORDER BY waktu_input DESC", conn)
+        
+        st.dataframe(
+            df_history, 
+            use_container_width=True,
+            column_config={
+                "progress_minggu_lalu": st.column_config.NumberColumn(format="%.2f %%"),
+                "progress_minggu_ini": st.column_config.NumberColumn(format="%.2f %%"),
+                "progres_penambahan": st.column_config.NumberColumn(format="%.2f %%"),
+            }
+        )  
+
+# =========================================================
+# 3. HALAMAN KELOLA MASTER SPK (ISOLASI DENGAN ELIF)
+# =========================================================
+elif menu == MENU_MASTER:
+    st.title("⚙️ Kelola Master Data Pekerjaan / SPK")
+    st.markdown("---")
+
+    tab_m_bangka, tab_m_belitung, tab_m_tambah = st.tabs([
+        "🌴 Master Data Bangka",
+        "⛵ Master Data Belitung",
+        "➕ Tambah SPK / Pekerjaan Baru"
+    ])
+
+    with get_db_connection() as conn:
+        try:
+            df_master = pd.read_sql_query("SELECT * FROM master_spk ORDER BY id ASC", conn)
+        except Exception:
+            df_master = pd.DataFrame()
+
+    def render_master_table(df_m_data, tab_key):
+        if df_m_data.empty:
+            st.info(f"Belum ada data SPK untuk wilayah ini. Silakan tambah data di tab 'Tambah SPK / Pekerjaan Baru'.")
+            return
+
+        edited_master = st.data_editor(
+            df_m_data,
+            use_container_width=True,
+            hide_index=True,
+            key=f"editor_master_{tab_key}",
+            column_config={
+                "id": st.column_config.NumberColumn("ID", disabled=True),
+                "jumlah": st.column_config.NumberColumn("Jumlah", format="%d"),
+                "nilai_pekerjaan": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %d"),
             }
         )
 
-        submit_spk = st.form_submit_button("➕ Simpan Master SPK Baru")
+        col_m_save, col_m_del = st.columns([1, 1])
+        with col_m_save:
+            if st.button("💾 Simpan Perubahan Master", key=f"btn_save_m_{tab_key}"):
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    for idx, row in edited_master.iterrows():
+                        cursor.execute("""
+                            UPDATE master_spk
+                            SET no_spk=%s, kontraktor=%s, jenis_pekerjaan=%s, unit=%s, jumlah=%s, nilai_pekerjaan=%s, catatan=%s
+                            WHERE id=%s
+                        """, (
+                            row['no_spk'], row['kontraktor'], row['jenis_pekerjaan'],
+                            row['unit'], row['jumlah'], row['nilai_pekerjaan'],
+                            row['catatan'], row['id']
+                        ))
+                    conn.commit()
+                st.success("✅ Data master berhasil diperbarui!")
+                st.rerun()
 
-        if submit_spk:
-            if not f_no_spk.strip():
-                st.error("⚠️ Nomor SPK wajib diisi!")
-            elif edited_df.empty or edited_df["Jenis Pekerjaan"].isnull().all():
-                st.error("⚠️ Minimal harus menginput 1 Jenis Pekerjaan!")
-            else:
-                try:
-                    with get_db_connection() as conn:
-                        cursor = conn.cursor()
-                        
-                        # Loop menyimpan setiap rincian pekerjaan
-                        for _, row in edited_df.iterrows():
-                            j_pekerjaan = str(row["Jenis Pekerjaan"]).strip() if pd.notnull(row["Jenis Pekerjaan"]) else ""
-                            n_pekerjaan = float(row["Nilai Kontrak Pekerjaan (Rp)"] or 0)
-                            
-                            if j_pekerjaan:
-                                cursor.execute("""
-                                    INSERT INTO master_spk (no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_spk_utama, nilai_pekerjaan, catatan)
-                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                                    ON CONFLICT (no_spk, jenis_pekerjaan) DO UPDATE 
-                                    SET kontraktor = EXCLUDED.kontraktor,
-                                        unit = EXCLUDED.unit,
-                                        jumlah = EXCLUDED.jumlah,
-                                        nilai_spk_utama = EXCLUDED.nilai_spk_utama,
-                                        nilai_pekerjaan = EXCLUDED.nilai_pekerjaan,
-                                        catatan = EXCLUDED.catatan;
-                                """, (f_no_spk.strip(), f_kontraktor.strip(), j_pekerjaan, f_unit, int(f_jumlah), float(f_total_nilai_spk), n_pekerjaan, f_catatan.strip()))
-                        
-                        conn.commit()
-                    st.success(f"✅ Master SPK '{f_no_spk}' berhasil tersimpan di Wilayah {f_unit}!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ Gagal menyimpan data: {e}")
+        with col_m_del:
+            id_to_delete = st.selectbox("Pilih ID Master SPK untuk dihapus:", df_m_data['id'].tolist(), key=f"sel_m_del_{tab_key}")
+            if st.button("🗑️ Hapus Master SPK Dipilih", key=f"btn_del_m_{tab_key}"):
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM master_spk WHERE id=%s", (id_to_delete,))
+                    conn.commit()
+                st.success(f"Master SPK ID {id_to_delete} berhasil dihapus!")
+                st.rerun()
+
+    with tab_m_bangka:
+        st.subheader("📋 Master Data Wilayah Bangka")
+        if not df_master.empty:
+            df_mb = df_master[df_master['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)]
+            render_master_table(df_mb, "bangka")
+        else:
+            render_master_table(pd.DataFrame(), "bangka")
+
+    with tab_m_belitung:
+        st.subheader("📋 Master Data Wilayah Belitung")
+        if not df_master.empty:
+            pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
+            df_mbl = df_master[
+                df_master['unit'].astype(str).str.contains(pola_belitung, case=False, na=False) |
+                (~df_master['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
+            ]
+            render_master_table(df_mbl, "belitung")
+        else:
+            render_master_table(pd.DataFrame(), "belitung")
+
+    with tab_m_tambah:
+        st.subheader("➕ Tambah Master SPK Baru")
+        with st.form("form_add_master", clear_on_submit=True):
+            col_a, col_b = st.columns(2)
+            with col_a:
+                no_spk = st.text_input("Nomor SPK*")
+                kontraktor = st.text_input("Nama Kontraktor*")
+                jenis_pekerjaan = st.text_input("Jenis Pekerjaan*")
+            with col_b:
+                unit = st.text_input("Unit / Wilayah (contoh: BANGKA / BELITUNG)*")
+                jumlah = st.number_input("Jumlah Unit", min_value=1, value=1, step=1)
+                nilai_pekerjaan = st.number_input("Nilai Pekerjaan (Rp)", min_value=0.0, value=0.0, step=1000.0)
+            
+            catatan = st.text_area("Catatan Tambahan")
+            btn_add = st.form_submit_button("💾 Simpan Master SPK")
+
+            if btn_add:
+                if not no_spk or not jenis_pekerjaan or not kontraktor:
+                    st.error("⚠️ Nomor SPK, Kontraktor, dan Jenis Pekerjaan wajib diisi!")
+                else:
+                    try:
+                        with get_db_connection() as conn:
+                            cursor = conn.cursor()
+                            cursor.execute("""
+                                INSERT INTO master_spk (no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_pekerjaan, catatan)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            """, (no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_pekerjaan, catatan))
+                            conn.commit()
+                        st.success("✅ Master SPK berhasil ditambahkan!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Gagal menyimpan data master: {e}")
