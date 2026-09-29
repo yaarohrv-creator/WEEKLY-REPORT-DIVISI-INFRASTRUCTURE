@@ -676,7 +676,7 @@ elif menu == MENU_INPUT:
                 df_master_all['unit'].astype(str).str.contains(pola_belitung, case=False, na=False) |
                 (~df_master_all['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
             ]
-        render_input_form(df_belitung_master, "belitung")  
+        render_input_form(df_belitung_master, "belitung")   
 
 # =========================================================
 # HALAMAN 3: KELOLA MASTER DATA PEKERJAAN / SPK
