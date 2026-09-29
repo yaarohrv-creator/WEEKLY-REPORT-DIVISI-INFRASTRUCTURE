@@ -62,22 +62,20 @@ if not st.session_state["authenticated"]:
     st.stop()
 
 # ---------------------------------------------------------
-# FUNGSIONALITAS DATABASE SQLITE (proyek_v2.db)
+# FUNGSIONALITAS DATABASE POSTGRESQL
 # ---------------------------------------------------------
 def get_db_connection():
-    return sqlite3.connect('proyek_v2.db')
-
-def sanitize_filename(filename):
-    return re.sub(r'[\\/*?:"<>|]', "", str(filename)).replace(" ", "_")
+    # Mengambil URI PostgreSQL dari Secrets Streamlit
+    return psycopg2.connect(st.secrets["postgres"]["url"])
 
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 1. TABEL MASTER_SPK
+    # 1. TABEL MASTER_SPK (PostgreSQL Menggunakan SERIAL)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS master_spk (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             no_spk TEXT,
             kontraktor TEXT,
             jenis_pekerjaan TEXT,
@@ -89,16 +87,11 @@ def init_db():
         )
     ''')
 
-    cursor.execute("PRAGMA table_info(master_spk)")
-    cols_mast = [col[1] for col in cursor.fetchall()]
-    if 'catatan' not in cols_mast:
-        cursor.execute("ALTER TABLE master_spk ADD COLUMN catatan TEXT")
-
     # 2. TABEL LAPORAN_MINGGUAN
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS laporan_mingguan (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            waktu_input DATETIME DEFAULT CURRENT_TIMESTAMP,
+            id SERIAL PRIMARY KEY,
+            waktu_input TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             no_spk TEXT,
             jenis_pekerjaan TEXT,
             kontraktor TEXT,
@@ -116,8 +109,8 @@ def init_db():
     # 3. TABEL HISTORY_PROGRESS
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS history_progress (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            waktu_input DATETIME DEFAULT CURRENT_TIMESTAMP,
+            id SERIAL PRIMARY KEY,
+            waktu_input TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             no_spk TEXT,
             jenis_pekerjaan TEXT,
             kontraktor TEXT,
