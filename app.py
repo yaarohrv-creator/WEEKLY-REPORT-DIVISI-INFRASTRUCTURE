@@ -607,45 +607,45 @@ elif menu == MENU_INPUT:
 
             submit_btn = st.form_submit_button("💾 Simpan Laporan Minggu Ini")
             
-           if submit_btn:
-    if prog_ini < prog_terakhir:
-        st.error("⚠️ Progress minggu ini tidak boleh lebih kecil dari minggu lalu!")
-    else:
-        path_f1_final = existing_foto_1
-        path_f2_final = existing_foto_2
+            if submit_btn:
+                if prog_ini < prog_terakhir:
+                    st.error("⚠️ Progress minggu ini tidak boleh lebih kecil dari minggu lalu!")
+                else:
+                    path_f1_final = existing_foto_1
+                    path_f2_final = existing_foto_2
 
-        # Upload Foto 1 ke Cloudinary
-        if f_upload_1:
-            res_1 = cloudinary.uploader.upload(f_upload_1)
-            path_f1_final = res_1.get("secure_url")
+                    # Upload Foto 1 ke Cloudinary
+                    if f_upload_1:
+                        res_1 = cloudinary.uploader.upload(f_upload_1)
+                        path_f1_final = res_1.get("secure_url")
 
-        # Upload Foto 2 ke Cloudinary
-        if f_upload_2:
-            res_2 = cloudinary.uploader.upload(f_upload_2)
-            path_f2_final = res_2.get("secure_url")
+                    # Upload Foto 2 ke Cloudinary
+                    if f_upload_2:
+                        res_2 = cloudinary.uploader.upload(f_upload_2)
+                        path_f2_final = res_2.get("secure_url")
 
-        penambahan_week = prog_ini - prog_terakhir
+                    penambahan_week = prog_ini - prog_terakhir
 
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM laporan_mingguan WHERE no_spk=%s AND jenis_pekerjaan=%s", (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan']))
-            cursor.execute("""
-                INSERT INTO laporan_mingguan (
-                    no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan, 
-                    progress_minggu_lalu, progress_minggu_ini, catatan, foto_1, foto_2, waktu_input
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)""", 
-                (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan'], spk_data_selected['kontraktor'], spk_data_selected['unit'], int(spk_data_selected['jumlah'] or 1), spk_data_selected['nilai_pekerjaan'], prog_terakhir, prog_ini, catatan_lap, path_f1_final, path_f2_final))
-            
-            cursor.execute("""
-                INSERT INTO history_progress (
-                    no_spk, jenis_pekerjaan, kontraktor, unit, 
-                    progress_minggu_lalu, progress_minggu_ini, progres_penambahan, catatan, foto_1, foto_2, waktu_input
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)""",
-                (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan'], spk_data_selected['kontraktor'], spk_data_selected['unit'], prog_terakhir, prog_ini, penambahan_week, catatan_lap, path_f1_final, path_f2_final))
-            
-            conn.commit()
-        st.success(f"✅ Laporan progress untuk SPK {spk_data_selected['no_spk']} berhasil disimpan!")
-        st.rerun()
+                    with get_db_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("DELETE FROM laporan_mingguan WHERE no_spk=%s AND jenis_pekerjaan=%s", (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan']))
+                        cursor.execute("""
+                            INSERT INTO laporan_mingguan (
+                                no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan, 
+                                progress_minggu_lalu, progress_minggu_ini, catatan, foto_1, foto_2, waktu_input
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)""", 
+                            (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan'], spk_data_selected['kontraktor'], spk_data_selected['unit'], int(spk_data_selected['jumlah'] or 1), spk_data_selected['nilai_pekerjaan'], prog_terakhir, prog_ini, catatan_lap, path_f1_final, path_f2_final))
+                        
+                        cursor.execute("""
+                            INSERT INTO history_progress (
+                                no_spk, jenis_pekerjaan, kontraktor, unit, 
+                                progress_minggu_lalu, progress_minggu_ini, progres_penambahan, catatan, foto_1, foto_2, waktu_input
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)""",
+                            (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan'], spk_data_selected['kontraktor'], spk_data_selected['unit'], prog_terakhir, prog_ini, penambahan_week, catatan_lap, path_f1_final, path_f2_final))
+                        
+                        conn.commit()
+                    st.success(f"✅ Laporan progress untuk SPK {spk_data_selected['no_spk']} berhasil disimpan!")
+                    st.rerun()
 
     with tab_i_bangka:
         st.subheader("🏝️ Input Progress - Wilayah Bangka")
