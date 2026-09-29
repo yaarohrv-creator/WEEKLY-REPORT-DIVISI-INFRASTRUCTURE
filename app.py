@@ -676,6 +676,27 @@ elif menu == MENU_INPUT:
             ]
         render_input_form(df_belitung_master, "belitung")  
 
+import streamlit as st
+import pandas as pd
+
+# ---------------------------------------------------------
+# NAVIGASI SIDEBAR
+# ---------------------------------------------------------
+menu = st.sidebar.selectbox(
+    "Pilih Menu", 
+    ["Dashboard Progress", "Kelola Master Data / SPK"]
+)
+
+# =========================================================
+# HALAMAN 1: DASHBOARD PROGRESS
+# =========================================================
+if menu == "Dashboard Progress":
+    st.title("📊 WEEKLY REPORT DIVISI INFRASTRUCTURE")
+    
+    # Masukkan seluruh kode untuk Dashboard / Input Progress Anda di sini...
+    # (Kode Master Data TIDAK AKAN dipanggil di sini)
+
+
 # =========================================================
 # HALAMAN 2: KELOLA MASTER DATA PEKERJAAN / SPK
 # =========================================================
@@ -798,4 +819,3 @@ elif menu == "Kelola Master Data / SPK":
                         st.rerun()
                     except Exception as e:
                         st.error(f"❌ Gagal menyimpan data: {e}")
-                            conn.commit()
