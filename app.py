@@ -775,6 +775,56 @@ def render_master_wilayah(wilayah_name):
                     }
                 )
 
+# =========================================================
+# HALAMAN: KELOLA MASTER DATA PEKERJAAN / SPK
+# =========================================================
+st.title("⚙️ Kelola Master Data Pekerjaan / SPK")
+
+# Tiga Tab Sesuai Tampilan UI
+tab_bangka, tab_belitung, tab_tambah = st.tabs([
+    "🌴 Master Data Bangka", 
+    "⛵ Master Data Belitung", 
+    "➕ Tambah SPK / Pekerjaan Baru"
+])
+
+# ---------------------------------------------------------
+# FUNGSI UNTUK MENAMPILKAN TABEL MASTER BERDASARKAN WILAYAH
+# ---------------------------------------------------------
+def render_master_wilayah(wilayah_name):
+    st.subheader(f"📋 Master Data Wilayah {wilayah_name.title()}")
+    
+    with get_db_connection() as conn:
+        query = "SELECT * FROM master_spk WHERE unit = %s ORDER BY no_spk ASC, id ASC"
+        df = pd.read_sql_query(query, conn, params=(wilayah_name,))
+    
+    if df.empty:
+        st.info(f"Belum ada data SPK untuk wilayah {wilayah_name.title()}. Silakan tambah data di tab 'Tambah SPK / Pekerjaan Baru'.")
+    else:
+        # Menampilkan Data Terkelompok berdasarkan Nomor SPK
+        grouped_spk = df.groupby("no_spk")
+        
+        for no_spk, group in grouped_spk:
+            kontraktor = group["kontraktor"].iloc[0]
+            nilai_utama = group["nilai_spk_utama"].iloc[0] if "nilai_spk_utama" in group.columns else 0
+            
+            # Tampilan Card SPK
+            with st.expander(f"📌 **Nomor SPK: {no_spk}** | Kontraktor: {kontraktor}", expanded=True):
+                st.markdown(f"**Total Nilai Kontrak SPK Utama:** `Rp {nilai_utama:,.2f}`")
+                st.markdown("**Rincian Pekerjaan & Nilai Kontrak:**")
+                
+                # Tabel Rincian Pekerjaan
+                show_df = group[["jenis_pekerjaan", "nilai_pekerjaan", "jumlah", "catatan"]].copy()
+                show_df.columns = ["Jenis Pekerjaan", "Nilai Kontrak Pekerjaan (Rp)", "Jumlah Unit", "Catatan"]
+                
+                st.dataframe(
+                    show_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Nilai Kontrak Pekerjaan (Rp)": st.column_config.NumberColumn(format="Rp %'d")
+                    }
+                )
+
 # ---------------------------------------------------------
 # TAB 1: MASTER DATA BANGKA
 # ---------------------------------------------------------
