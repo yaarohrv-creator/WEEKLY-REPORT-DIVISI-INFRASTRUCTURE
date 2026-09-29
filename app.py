@@ -1,10 +1,19 @@
 import os
 import io
-import sqlite3
+import re
+import time
+import psycopg2
 import pandas as pd
 import streamlit as st
-import re
+import cloudinary
+import cloudinary.uploader
 
+# Konfigurasi Cloudinary dari Secrets Streamlit Cloud
+cloudinary.config(
+    cloud_name=st.secrets["cloudinary"]["cloud_name"],
+    api_key=st.secrets["cloudinary"]["api_key"],
+    api_secret=st.secrets["cloudinary"]["api_secret"]
+)
 # Modul untuk styling dan export Excel
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
