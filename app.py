@@ -721,7 +721,7 @@ elif menu == "Kelola Master Data / SPK":
                         }
                     )
 
-# TAB 1: MASTER DATA BANGKA
+    # TAB 1: MASTER DATA BANGKA
     with tab_bangka:
         render_master_wilayah("BANGKA")
 
@@ -798,3 +798,4 @@ elif menu == "Kelola Master Data / SPK":
                         st.rerun()
                     except Exception as e:
                         st.error(f"❌ Gagal menyimpan data: {e}")
+                            conn.commit()
