@@ -2,33 +2,33 @@ import os
 import io
 import re
 import time
+import requests
 import psycopg2
 import pandas as pd
 import streamlit as st
 import cloudinary
 import cloudinary.uploader
-import requests  # Ditambahkan untuk mengunduh gambar dari Cloudinary saat Export Excel
-
-# ---------------------------------------------------------
-# KONFIGURASI CLOUDINARY (Hapus duplikasi)
-# ---------------------------------------------------------
-cloudinary.config(
-    cloud_name=st.secrets["cloudinary"]["cloud_name"],
-    api_key=st.secrets["cloudinary"]["api_key"],
-    api_secret=st.secrets["cloudinary"]["api_secret"]
-)
 
 # Modul untuk styling dan export Excel
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-# --- LIBRARY UNTUK MEMPROSES GAMBAR ---
+# --- KONFIGURASI CLOUDINARY ---
+try:
+    cloudinary.config(
+        cloud_name=st.secrets["cloudinary"]["cloud_name"],
+        api_key=st.secrets["cloudinary"]["api_key"],
+        api_secret=st.secrets["cloudinary"]["api_secret"]
+    )
+except Exception as e:
+    st.error(f"Gagal memuat konfigurasi Cloudinary dari st.secrets: {e}")
+
+# --- LIBRARY MEMPROSES GAMBAR ---
 try:
     from PIL import Image as PILImage
     from openpyxl.drawing.image import Image as OpenPyXLImage
     has_pil = True
 except ImportError:
-    st.error("⚠️ Library 'Pillow' belum terinstal. Gambar fisik tidak akan muncul di Excel. Silakan instal dengan perintah: pip install Pillow")
     has_pil = False
 
 # Konfigurasi Halaman Streamlit
@@ -43,15 +43,11 @@ if not os.path.exists(UPLOAD_DIR):
 # FUNGSI HELPER: UPLOAD FOTO KE CLOUDINARY
 # ---------------------------------------------------------
 def upload_foto_to_cloudinary(uploaded_file):
-    """
-    Mengunggah file foto dari Streamlit ke Cloudinary 
-    dan mengembalikan URL publiknya.
-    """
     if uploaded_file is not None:
         try:
             response = cloudinary.uploader.upload(
                 uploaded_file,
-                folder="progress_proyek"  # Nama folder di Cloudinary
+                folder="progress_proyek"
             )
             return response.get("secure_url")
         except Exception as e:
@@ -67,9 +63,8 @@ if "authenticated" not in st.session_state:
 
 def check_password():
     password_benar = st.secrets.get("APP_PASSWORD", "123456")
-    if st.session_state["password_input"] == password_benar:
+    if st.session_state.get("password_input") == password_benar:
         st.session_state["authenticated"] = True
-        del st.session_state["password_input"]
     else:
         st.session_state["authenticated"] = False
         st.error("🔑 Password salah! Silakan coba lagi.")
@@ -88,68 +83,71 @@ def get_db_connection():
     return psycopg2.connect(st.secrets["postgres"]["url"])
 
 def init_db():
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    # 1. TABEL MASTER_SPK
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS master_spk (
-            id SERIAL PRIMARY KEY,
-            no_spk TEXT,
-            kontraktor TEXT,
-            jenis_pekerjaan TEXT,
-            unit TEXT,
-            jumlah INTEGER DEFAULT 1,
-            nilai_pekerjaan REAL,
-            catatan TEXT,
-            UNIQUE(no_spk, jenis_pekerjaan)
-        )
-    ''')
+        # 1. TABEL MASTER_SPK
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS master_spk (
+                id SERIAL PRIMARY KEY,
+                no_spk TEXT,
+                kontraktor TEXT,
+                jenis_pekerjaan TEXT,
+                unit TEXT,
+                jumlah INTEGER DEFAULT 1,
+                nilai_pekerjaan REAL,
+                catatan TEXT,
+                UNIQUE(no_spk, jenis_pekerjaan)
+            )
+        ''')
 
-    # 2. TABEL LAPORAN_MINGGUAN
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS laporan_mingguan (
-            id SERIAL PRIMARY KEY,
-            waktu_input TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            no_spk TEXT,
-            jenis_pekerjaan TEXT,
-            kontraktor TEXT,
-            unit TEXT,
-            jumlah INTEGER,
-            nilai_pekerjaan REAL,
-            progress_minggu_lalu REAL,
-            progress_minggu_ini REAL,
-            catatan TEXT,
-            foto_1 TEXT,
-            foto_2 TEXT
-        )
-    ''')
+        # 2. TABEL LAPORAN_MINGGUAN
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS laporan_mingguan (
+                id SERIAL PRIMARY KEY,
+                waktu_input TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                no_spk TEXT,
+                jenis_pekerjaan TEXT,
+                kontraktor TEXT,
+                unit TEXT,
+                jumlah INTEGER,
+                nilai_pekerjaan REAL,
+                progress_minggu_lalu REAL,
+                progress_minggu_ini REAL,
+                catatan TEXT,
+                foto_1 TEXT,
+                foto_2 TEXT
+            )
+        ''')
 
-    # 3. TABEL HISTORY_PROGRESS
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS history_progress (
-            id SERIAL PRIMARY KEY,
-            waktu_input TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            no_spk TEXT,
-            jenis_pekerjaan TEXT,
-            kontraktor TEXT,
-            unit TEXT,
-            progress_minggu_lalu REAL,
-            progress_minggu_ini REAL,
-            progres_penambahan REAL,
-            catatan TEXT,
-            foto_1 TEXT,
-            foto_2 TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
+        # 3. TABEL HISTORY_PROGRESS
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS history_progress (
+                id SERIAL PRIMARY KEY,
+                waktu_input TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                no_spk TEXT,
+                jenis_pekerjaan TEXT,
+                kontraktor TEXT,
+                unit TEXT,
+                progress_minggu_lalu REAL,
+                progress_minggu_ini REAL,
+                progres_penambahan REAL,
+                catatan TEXT,
+                foto_1 TEXT,
+                foto_2 TEXT
+            )
+        ''')
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        st.error(f"Gagal melakukan inisialisasi Database: {e}")
 
 init_db()
 
-# ==========================================
-# FUNGSI EXPORT EXCEL (DIPERBAIKI & DILENGKAPI)
-# ==========================================
+# ---------------------------------------------------------
+# FUNGSI EXPORT EXCEL
+# ---------------------------------------------------------
 def generate_excel_full_feature(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -221,14 +219,12 @@ def generate_excel_full_feature(df):
 
             worksheet_foto.row_dimensions[foto_row_idx].height = 200
 
-            # Sub-fungsi untuk mengunduh dan menyisipkan gambar (baik dari URL maupun Path Lokal)
             def insert_image_visual_resized(path_or_url, ws, current_row, current_col, target_col_width):
                 cell_p = ws.cell(row=current_row, column=current_col)
                 cell_p.border = border_standard
                 
                 if path_or_url and has_pil:
                     try:
-                        # Memeriksa apakah input berupa URL (Cloudinary) atau File Lokal
                         if str(path_or_url).startswith("http"):
                             res = requests.get(path_or_url, timeout=10)
                             pil_img = PILImage.open(io.BytesIO(res.content))
@@ -258,10 +254,29 @@ def generate_excel_full_feature(df):
                         cell_p.value = f"Error load gambar: {e}"
                         cell_p.alignment = align_center
 
-            # Sisipkan Foto 1 dan Foto 2 ke Sheet Foto Dokumentasi
             insert_image_visual_resized(row.get('Foto 1'), worksheet_foto, foto_row_idx, 2, LEBAR_KOLOM_FOTO)
             insert_image_visual_resized(row.get('Foto 2'), worksheet_foto, foto_row_idx, 3, LEBAR_KOLOM_FOTO)
 
             foto_row_idx += 1
 
     return output.getvalue()
+
+# ---------------------------------------------------------
+# TAMPILAN UTAMA APLIKASI STREAMLIT
+# ---------------------------------------------------------
+st.title("📋 Sistem Laporan Progress Pekerjaan")
+st.write("Selamat datang! Silakan gunakan menu di bawah untuk mengelola data proyek.")
+
+# Tampilkan data ringkasan jika ada
+try:
+    conn = get_db_connection()
+    df_spk = pd.read_sql_query("SELECT * FROM master_spk", conn)
+    conn.close()
+    
+    st.subheader("Data Master SPK")
+    if not df_spk.empty:
+        st.dataframe(df_spk, use_container_width=True)
+    else:
+        st.info("Belum ada data Master SPK di database.")
+except Exception as e:
+    st.warning(f"Belum dapat menampilkan data: {e}")
