@@ -879,7 +879,7 @@ elif menu == MENU_MASTER:
         st.subheader("📋 Seluruh Master Data SPK")
         render_grouped_master_table(df_master_all, key_prefix="semua")
 
-   # -------------------------------------------------------------
+  # -------------------------------------------------------------
     # TAB 4: TAMBAH SPK BARU (MULTIPLE ITEM PEKERJAAN)
     # -------------------------------------------------------------
     with tab_tambah:
@@ -955,78 +955,51 @@ elif menu == MENU_MASTER:
                 st.session_state.item_pekerjaan_list.append({"jenis": "", "jumlah": 1, "nilai": 0.0})
                 st.rerun()
 
-            st.markdown("---")
-            st.markdown("### 🛠️ Rincian Jenis Pekerjaan & Nilai Pekerjaan")
+        st.markdown("---")
+        # Display Total Akumulasi Nilai SPK Utama
+        st.info(f"💡 **Total Nilai Kontrak / SPK Utama (Terakumulasi Otomatis):** Rp {total_akumulasi_spk:,.2f}")
 
-            list_pekerjaan_input = []
-            
-            # Loop render input jenis pekerjaan
-            for i in range(len(st.session_state["item_pekerjaan_list"])):
-                c_pek, c_val = st.columns([3, 2])
-                with c_pek:
-                    p_nama = st.text_input(f"Jenis Pekerjaan #{i+1} *", key=f"pek_name_{i}", placeholder="Contoh: Pekerjaan Pengecoran Jalan")
-                with c_val:
-                    p_nilai = st.number_input(f"Nilai Pekerjaan #{i+1} (Rp)", min_value=0.0, step=500000.0, format="%.2f", key=f"pek_val_{i}")
-                
-                if p_nama.strip():
-                    list_pekerjaan_input.append({"jenis": p_nama.strip(), "nilai": p_nilai})
-
-            submit_master = st.form_submit_button("💾 Simpan Semua Data SPK & Pekerjaan")
-
-        # Tombol penambah/pengurang baris di luar form
-        col_add, col_rem = st.columns(2)
-        with col_add:
-            if st.button("➕ Tambah Baris Pekerjaan"):
-                st.session_state["item_pekerjaan_list"].append({"nama": "", "nilai": 0.0})
-                st.rerun()
-        with col_rem:
-            if len(st.session_state["item_pekerjaan_list"]) > 1:
-                if st.button("➖ Hapus Baris Terakhir"):
-                    st.session_state["item_pekerjaan_list"].pop()
-                    st.rerun()
-
-        # Proses Simpan ke Database
-        if submit_master:
-            # Hitung total nilai SPK utama secara otomatis dari sum nilai pekerjaan
-            total_nilai_spk_otomatis = sum(item["nilai"] for item in list_pekerjaan_input)
-
-            if not input_no_spk.strip():
-                st.error("⚠️ Nomor SPK wajib diisi!")
-            elif not list_pekerjaan_input:
-                st.error("⚠️ Minimal isi 1 Jenis Pekerjaan!")
+        # Tombol Simpan
+        if st.button("💾 Simpan Master Data SPK", type="primary", use_container_width=True):
+            # Validasi Header
+            if not no_spk.strip() or not kontraktor.strip():
+                st.error("⚠️ Mohon lengkapi Nomor SPK dan Kontraktor.")
             else:
-                try:
-                    with get_db_connection() as conn:
-                        cursor = conn.cursor()
-                        for item in list_pekerjaan_input:
-                            # 1. Insert ke Master SPK (nilai_spk_utama diisi nilai akumulasi otomatis)
-                            cursor.execute("""
-                                INSERT INTO master_spk (
-                                    no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_spk_utama, nilai_pekerjaan, catatan
-                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                            """, (
-                                input_no_spk.strip(), input_kontraktor.strip(), item["jenis"],
-                                input_unit, input_jumlah, total_nilai_spk_otomatis, item["nilai"], input_catatan.strip()
-                            ))
+                # Validasi Item Pekerjaan
+                valid_items = [i for i in st.session_state.item_pekerjaan_list if i["jenis"].strip() != ""]
+                
+                if not valid_items:
+                    st.error("⚠️ Mohon isi minimal 1 jenis pekerjaan.")
+                else:
+                    try:
+                        with get_db_connection() as conn:
+                            cursor = conn.cursor()
                             
-                            # 2. Insert ke Laporan Mingguan
-                            cursor.execute("""
-                                INSERT INTO laporan_mingguan (
-                                    no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan,
-                                    progress_minggu_lalu, progress_minggu_ini, catatan, waktu_input
-                                ) VALUES (%s, %s, %s, %s, %s, %s, 0, 0, %s, CURRENT_TIMESTAMP)
-                            """, (
-                                input_no_spk.strip(), item["jenis"], input_kontraktor.strip(),
-                                input_unit, input_jumlah, item["nilai"], input_catatan.strip()
-                            ))
+                            # Insert setiap item pekerjaan ke dalam database
+                            for item in valid_items:
+                                cursor.execute("""
+                                    INSERT INTO master_spk (
+                                        no_spk, kontraktor, jenis_pekerjaan, unit, lokasi, jumlah, nilai_pekerjaan, nilai_spk_utama, catatan
+                                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                """, (
+                                    no_spk.strip(), 
+                                    kontraktor.strip(), 
+                                    item["jenis"].strip(), 
+                                    unit, 
+                                    lokasi.strip(), 
+                                    item["jumlah"], 
+                                    item["nilai"], 
+                                    total_akumulasi_spk, 
+                                    catatan.strip()
+                                ))
+                            conn.commit()
 
-                        conn.commit()
-                    
-                    st.session_state["item_pekerjaan_list"] = [{"nama": "", "nilai": 0.0}]
-                    st.success(f"✅ Berhasil menyimpan SPK '{input_no_spk}' dengan Total Nilai Utama Rp {total_nilai_spk_otomatis:,.2f}!")
-                    st.rerun()
+                            # Akumulasi ulang otomatis di DB untuk memastikan presisi
+                            recalculate_spk_utama_totals(conn)
 
-                except psycopg2.IntegrityError:
-                    st.error("⚠️ Salah satu kombinasi Nomor SPK dan Jenis Pekerjaan sudah terdaftar di database!")
-                except Exception as e:
-                    st.error(f"⚠️ Terjadi kesalahan saat menyimpan data: {e}")
+                        # Reset form state setelah berhasil menyimpan
+                        st.session_state.item_pekerjaan_list = [{"jenis": "", "jumlah": 1, "nilai": 0.0}]
+                        st.success(f"✅ Master SPK **{no_spk}** dengan {len(valid_items)} item pekerjaan berhasil disimpan!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"⚠️ Gagal menyimpan data: {e}")
