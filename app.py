@@ -70,23 +70,28 @@ def init_db():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
-                # 1. TABEL MASTER_SPK
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS master_spk (
-                        id SERIAL PRIMARY KEY,
-                        no_spk TEXT,
-                        kontraktor TEXT,
-                        jenis_pekerjaan TEXT,
-                        unit TEXT,
-                        jumlah INTEGER DEFAULT 1,
-                        nilai_spk_utama REAL DEFAULT 0,
-                        nilai_pekerjaan REAL DEFAULT 0,
-                        catatan TEXT,
-                        UNIQUE(no_spk, jenis_pekerjaan)
-                    );
-                ''')
+               -- 1. Buat/Pastikan tabel master_spk sebagai tabel utama (Header)
+CREATE TABLE IF NOT EXISTS master_spk (
+    id SERIAL PRIMARY KEY,
+    no_spk VARCHAR(100) UNIQUE NOT NULL,
+    kontraktor VARCHAR(150) NOT NULL,
+    unit VARCHAR(50) NOT NULL,
+    nilai_kontrak_spk NUMERIC(15, 2) DEFAULT 0,
+    catatan TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
-                # 2. TABEL LAPORAN_MINGGUAN
+-- 2. Buat tabel rincian_pekerjaan_spk sebagai rincian sub-pekerjaan (Detail)
+CREATE TABLE IF NOT EXISTS rincian_pekerjaan_spk (
+    id SERIAL PRIMARY KEY,
+    no_spk VARCHAR(100) REFERENCES master_spk(no_spk) ON DELETE CASCADE ON UPDATE CASCADE,
+    jenis_pekerjaan VARCHAR(150) NOT NULL,
+    nilai_kontrak_pekerjaan NUMERIC(15, 2) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_spk_pekerjaan UNIQUE (no_spk, jenis_pekerjaan)
+);
+
+                # 3. TABEL LAPORAN_MINGGUAN
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS laporan_mingguan (
                         id SERIAL PRIMARY KEY,
@@ -105,7 +110,7 @@ def init_db():
                     );
                 ''')
 
-                # 3. TABEL HISTORY_PROGRESS
+                # 4. TABEL HISTORY_PROGRESS
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS history_progress (
                         id SERIAL PRIMARY KEY,
