@@ -680,7 +680,32 @@ elif menu == MENU_INPUT:
                 (~df_master_all['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
             ]
         render_input_form(df_belitung_master, "belitung")  
+# -------------------------------------------------------------
+# FUNGSI AUTO-MIGRATION: MEMASTIKAN KOLOM 'lokasi' ADA DI DATABASE
+# -------------------------------------------------------------
+def ensure_lokasi_column_exists():
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DO $$ 
+                BEGIN 
+                    IF NOT EXISTS (
+                        SELECT 1 
+                        FROM information_schema.columns 
+                        WHERE table_name='master_spk' AND column_name='lokasi'
+                    ) THEN 
+                        ALTER TABLE master_spk ADD COLUMN lokasi VARCHAR(255);
+                    END IF;
+                END $$;
+            """)
+            conn.commit()
+    except Exception as e:
+        # Menampilkan pesan jika koneksi gagal atau ada kendala lain
+        print(f"Peringatan periksa kolom lokasi: {e}")
 
+# PANGGIL FUNGSI INI LANGSUNG DI FILE UTAMA (Luar Loop Menu / Utama App)
+ensure_lokasi_column_exists()
 # =========================================================
 # HALAMAN: KELOLA MASTER DATA PEKERJAAN / SPK
 # =========================================================
