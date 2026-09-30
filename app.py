@@ -879,26 +879,81 @@ elif menu == MENU_MASTER:
         st.subheader("📋 Seluruh Master Data SPK")
         render_grouped_master_table(df_master_all, key_prefix="semua")
 
-   # ---------------------------------------------------------
-    # TAB 4 : TAMBAH SPK / PEKERJAAN BARU (AUTOMATIC TOTAL CALCULATED)
-    # ---------------------------------------------------------
+   # -------------------------------------------------------------
+    # TAB 4: TAMBAH SPK BARU (MULTIPLE ITEM PEKERJAAN)
+    # -------------------------------------------------------------
     with tab_tambah:
-        st.subheader("➕ Tambah Master SPK / Pekerjaan Baru")
-        
+        st.subheader("📝 Form Tambah Data Master SPK Baru")
+
+        # Inisialisasi session state untuk daftar item pekerjaan jika belum ada
         if "item_pekerjaan_list" not in st.session_state:
-            st.session_state["item_pekerjaan_list"] = [{"nama": "", "nilai": 0.0}]
+            st.session_state.item_pekerjaan_list = [{"jenis": "", "jumlah": 1, "nilai": 0.0}]
 
-        with st.form("form_tambah_master_spk", clear_on_submit=False):
-            col_m1, col_m2 = st.columns(2)
-            
-            with col_m1:
-                input_no_spk = st.text_input("Nomor SPK *", placeholder="Contoh: SPK/INFRA/2026/001")
-                input_kontraktor = st.text_input("Nama Kontraktor", placeholder="Contoh: PT. Karya Utama")
-                input_unit = st.selectbox("Unit / Wilayah Proyek", ["BANGKA", "BELITUNG"])
+        # 1. Informasi Utama SPK (Header)
+        st.markdown("##### 1. Informasi Utama SPK (Header)")
+        col1, col2 = st.columns(2)
+        with col1:
+            no_spk = st.text_input("Nomor SPK*", placeholder="048/PSM2/BPRE/BPSL/JKTO/INF/III/2026", key="input_no_spk")
+            kontraktor = st.text_input("Kontraktor*", placeholder="CV. SELAMAT JAYA", key="input_kontraktor")
+        with col2:
+            unit = st.selectbox("Unit / Wilayah*", options=["BANGKA", "BELITUNG"], key="input_unit")
+            lokasi = st.text_input("Lokasi", placeholder="BPRE", key="input_lokasi")
 
-            with col_m2:
-                input_jumlah = st.number_input("Jumlah Unit/Item", min_value=1, value=1, step=1)
-                input_catatan = st.text_area("Catatan Tambahan")
+        catatan = st.text_area("Catatan", key="input_catatan")
+
+        st.markdown("---")
+        st.markdown("##### 2. Detail Item Rincian Pekerjaan")
+
+        # 2. Render Form Dynamic Item Pekerjaan
+        total_akumulasi_spk = 0.0
+
+        for idx, item in enumerate(st.session_state.item_pekerjaan_list):
+            st.markdown(f"**Item Pekerjaan #{idx + 1}**")
+            col_d1, col_d2, col_d3, col_d4 = st.columns([4, 1, 2, 1])
+
+            with col_d1:
+                item["jenis"] = st.text_input(
+                    f"Jenis Pekerjaan #{idx + 1}*", 
+                    value=item["jenis"], 
+                    key=f"jenis_{idx}",
+                    placeholder="Contoh: Renovasi atap R. G1"
+                )
+            with col_d2:
+                item["jumlah"] = st.number_input(
+                    f"Jumlah #{idx + 1}", 
+                    min_value=1, 
+                    value=int(item["jumlah"]), 
+                    step=1, 
+                    key=f"jumlah_{idx}"
+                )
+            with col_d3:
+                item["nilai"] = st.number_input(
+                    f"Nilai Pekerjaan (Rp) #{idx + 1}*", 
+                    min_value=0.0, 
+                    value=float(item["nilai"]), 
+                    step=100000.0, 
+                    format="%.2f", 
+                    key=f"nilai_{idx}"
+                )
+            with col_d4:
+                st.write("") # Spacing vertikal
+                st.write("")
+                # Tombol Hapus Baris jika item lebih dari 1
+                if len(st.session_state.item_pekerjaan_list) > 1:
+                    if st.button("❌", key=f"btn_del_{idx}", help="Hapus item ini"):
+                        st.session_state.item_pekerjaan_list.pop(idx)
+                        st.rerun()
+
+            # Hitung subtotal & Akumulasi total SPK
+            subtotal = float(item["jumlah"]) * float(item["nilai"])
+            total_akumulasi_spk += subtotal
+
+        # Tombol Tambah Baris Pekerjaan
+        col_btn1, col_btn2 = st.columns([2, 5])
+        with col_btn1:
+            if st.button("➕ Tambah Item Pekerjaan", use_container_width=True):
+                st.session_state.item_pekerjaan_list.append({"jenis": "", "jumlah": 1, "nilai": 0.0})
+                st.rerun()
 
             st.markdown("---")
             st.markdown("### 🛠️ Rincian Jenis Pekerjaan & Nilai Pekerjaan")
