@@ -694,7 +694,7 @@ elif menu == MENU_MASTER:
         "➕ Tambah SPK / Pekerjaan Baru"
     ])
 
-    # ---------------------------------------------------------
+   # ---------------------------------------------------------
     # FUNGSI UNTUK MENAMPILKAN TABEL MASTER BERDASARKAN WILAYAH
     # ---------------------------------------------------------
     def render_master_wilayah(pola_wilayah, tab_key):
@@ -705,26 +705,43 @@ elif menu == MENU_MASTER:
         
         if not df_master.empty:
             if tab_key == "bangka":
-                df_filtered = df_master[df_master['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)]
+                df_filtered = df_master[df_master['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)].copy()
             else:
                 pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
                 df_filtered = df_master[
                     df_master['unit'].astype(str).str.contains(pola_belitung, case=False, na=False) |
                     (~df_master['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
-                ]
+                ].copy()
         else:
             df_filtered = pd.DataFrame()
 
         if df_filtered.empty:
             st.info(f"💡 Belum ada data SPK terdaftar untuk wilayah {tab_key.title()}.")
         else:
+            # 1. Simpan ID asli database ke kolom real_id
+            df_filtered['real_id'] = df_filtered['id']
+
+            # 2. Buat kolom 'No' berurut secara otomatis (1, 2, 3, dst.)
+            df_filtered.reset_index(drop=True, inplace=True)
+            df_filtered.insert(0, 'No', range(1, len(df_filtered) + 1))
+
+            # Susun urutan kolom tampilan
+            cols_order = [
+                'No', 'no_spk', 'kontraktor', 'jenis_pekerjaan', 'unit', 
+                'jumlah', 'nilai_pekerjaan', 'nilai_spk_utama', 'catatan', 'real_id'
+            ]
+            
+            existing_cols = [c for c in cols_order if c in df_filtered.columns]
+
+            editor_key = f"editor_master_{tab_key}"
             edited_master = st.data_editor(
-                df_filtered,
+                df_filtered[existing_cols],
                 num_rows="dynamic",
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "id": st.column_config.NumberColumn("ID", disabled=True),
+                    "real_id": None,  # Sembunyikan ID asli dari database
+                    "No": st.column_config.NumberColumn("No", disabled=True),  # Nomor urut otomatis
                     "no_spk": st.column_config.TextColumn("Nomor SPK", required=True),
                     "kontraktor": st.column_config.TextColumn("Kontraktor"),
                     "jenis_pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan", required=True),
@@ -734,15 +751,12 @@ elif menu == MENU_MASTER:
                     "nilai_pekerjaan": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %d"),
                     "catatan": st.column_config.TextColumn("Catatan"),
                 },
-                key=f"editor_master_{tab_key}"
+                key=editor_key
             )
 
-           # -------------------------------------------------------------------------
+            # -------------------------------------------------------------------------
             # DETEKSI BARIS DIHAPUS & PROSES HAPUS PERMANEN
             # -------------------------------------------------------------------------
-            editor_key = f"editor_master_{tab_key}"
-            
-            # 1. Penanganan Hapus Baris (Centang / Trash Icon di Data Editor)
             if editor_key in st.session_state and "deleted_rows" in st.session_state[editor_key]:
                 deleted_indices = st.session_state[editor_key]["deleted_rows"]
 
@@ -752,12 +766,11 @@ elif menu == MENU_MASTER:
                         for idx in deleted_indices:
                             if idx < len(df_filtered):
                                 row_to_del = df_filtered.iloc[idx]
-                                real_id = row_to_del.get('id')
+                                real_id = row_to_del.get('real_id')
                                 no_spk = str(row_to_del.get('no_spk', '')).strip()
                                 j_pek = str(row_to_del.get('jenis_pekerjaan', '')).strip()
 
                                 if pd.notna(real_id):
-                                    # Hapus dari tabel pendukung (laporan_mingguan & history_progress)
                                     cursor.execute("""
                                         DELETE FROM laporan_mingguan 
                                         WHERE LOWER(TRIM(no_spk)) = LOWER(%s) AND LOWER(TRIM(jenis_pekerjaan)) = LOWER(%s)
@@ -768,7 +781,6 @@ elif menu == MENU_MASTER:
                                         WHERE LOWER(TRIM(no_spk)) = LOWER(%s) AND LOWER(TRIM(jenis_pekerjaan)) = LOWER(%s)
                                     """, (no_spk, j_pek))
 
-                                    # Hapus dari tabel utama master_spk
                                     cursor.execute("DELETE FROM master_spk WHERE id = %s", (int(real_id),))
 
                         conn.commit()
@@ -776,24 +788,28 @@ elif menu == MENU_MASTER:
                     if editor_key in st.session_state:
                         del st.session_state[editor_key]
 
-                    st.success("✅ Data berhasil dihapus permanen dari database!")
+                    st.success("✅ Data berhasil dihapus permanen!")
                     st.rerun()
 
-            # 2. Penanganan Simpan Perubahan Edit Teks / Angka
+            # -------------------------------------------------------------------------
+            # SIMPAN PERUBAHAN EDIT TEKS / ANGKA
+            # -------------------------------------------------------------------------
             if st.button("💾 Simpan Perubahan Master Data", key=f"btn_save_master_{tab_key}"):
                 with get_db_connection() as conn:
                     cursor = conn.cursor()
                     for idx, row in edited_master.iterrows():
-                        cursor.execute("""
-                            UPDATE master_spk 
-                            SET no_spk=%s, kontraktor=%s, jenis_pekerjaan=%s, unit=%s, 
-                                jumlah=%s, nilai_spk_utama=%s, nilai_pekerjaan=%s, catatan=%s
-                            WHERE id=%s
-                        """, (
-                            row['no_spk'], row['kontraktor'], row['jenis_pekerjaan'], row['unit'],
-                            row['jumlah'], row['nilai_spk_utama'], row['nilai_pekerjaan'], row['catatan'],
-                            row['id']
-                        ))
+                        real_id = row.get('real_id')
+                        if pd.notna(real_id):
+                            cursor.execute("""
+                                UPDATE master_spk 
+                                SET no_spk=%s, kontraktor=%s, jenis_pekerjaan=%s, unit=%s, 
+                                    jumlah=%s, nilai_spk_utama=%s, nilai_pekerjaan=%s, catatan=%s
+                                WHERE id=%s
+                            """, (
+                                row['no_spk'], row['kontraktor'], row['jenis_pekerjaan'], row['unit'],
+                                row['jumlah'], row['nilai_spk_utama'], row['nilai_pekerjaan'], row['catatan'],
+                                int(real_id)
+                            ))
                     conn.commit()
                 st.success("✅ Perubahan Master Data berhasil disimpan!")
                 st.rerun()
