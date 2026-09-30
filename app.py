@@ -737,7 +737,49 @@ elif menu == MENU_MASTER:
                 key=f"editor_master_{tab_key}"
             )
 
-            # Simpan Perubahan Data Master
+           # -------------------------------------------------------------------------
+            # DETEKSI BARIS DIHAPUS & PROSES HAPUS PERMANEN
+            # -------------------------------------------------------------------------
+            editor_key = f"editor_master_{tab_key}"
+            
+            # 1. Penanganan Hapus Baris (Centang / Trash Icon di Data Editor)
+            if editor_key in st.session_state and "deleted_rows" in st.session_state[editor_key]:
+                deleted_indices = st.session_state[editor_key]["deleted_rows"]
+
+                if deleted_indices:
+                    with get_db_connection() as conn:
+                        cursor = conn.cursor()
+                        for idx in deleted_indices:
+                            if idx < len(df_filtered):
+                                row_to_del = df_filtered.iloc[idx]
+                                real_id = row_to_del.get('id')
+                                no_spk = str(row_to_del.get('no_spk', '')).strip()
+                                j_pek = str(row_to_del.get('jenis_pekerjaan', '')).strip()
+
+                                if pd.notna(real_id):
+                                    # Hapus dari tabel pendukung (laporan_mingguan & history_progress)
+                                    cursor.execute("""
+                                        DELETE FROM laporan_mingguan 
+                                        WHERE LOWER(TRIM(no_spk)) = LOWER(%s) AND LOWER(TRIM(jenis_pekerjaan)) = LOWER(%s)
+                                    """, (no_spk, j_pek))
+
+                                    cursor.execute("""
+                                        DELETE FROM history_progress 
+                                        WHERE LOWER(TRIM(no_spk)) = LOWER(%s) AND LOWER(TRIM(jenis_pekerjaan)) = LOWER(%s)
+                                    """, (no_spk, j_pek))
+
+                                    # Hapus dari tabel utama master_spk
+                                    cursor.execute("DELETE FROM master_spk WHERE id = %s", (int(real_id),))
+
+                        conn.commit()
+
+                    if editor_key in st.session_state:
+                        del st.session_state[editor_key]
+
+                    st.success("✅ Data berhasil dihapus permanen dari database!")
+                    st.rerun()
+
+            # 2. Penanganan Simpan Perubahan Edit Teks / Angka
             if st.button("💾 Simpan Perubahan Master Data", key=f"btn_save_master_{tab_key}"):
                 with get_db_connection() as conn:
                     cursor = conn.cursor()
