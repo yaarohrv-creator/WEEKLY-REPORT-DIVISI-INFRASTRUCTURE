@@ -1,10 +1,26 @@
 import os
 import io
-import sqlite3
+import re
+import time
+import psycopg2
 import pandas as pd
 import streamlit as st
-import re
+import cloudinary
+import cloudinary.uploader
 
+# Konfigurasi Cloudinary dari Secrets Streamlit Cloud
+cloudinary.config(
+    cloud_name=st.secrets["cloudinary"]["cloud_name"],
+    api_key=st.secrets["cloudinary"]["api_key"],
+    api_secret=st.secrets["cloudinary"]["api_secret"]
+)
+
+# Konfigurasi Cloudinary dari Secrets Streamlit Cloud
+cloudinary.config(
+    cloud_name=st.secrets["cloudinary"]["cloud_name"],
+    api_key=st.secrets["cloudinary"]["api_key"],
+    api_secret=st.secrets["cloudinary"]["api_secret"]
+)
 # Modul untuk styling dan export Excel
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -53,22 +69,20 @@ if not st.session_state["authenticated"]:
     st.stop()
 
 # ---------------------------------------------------------
-# FUNGSIONALITAS DATABASE SQLITE (proyek_v2.db)
+# FUNGSIONALITAS DATABASE POSTGRESQL
 # ---------------------------------------------------------
 def get_db_connection():
-    return sqlite3.connect('proyek_v2.db')
-
-def sanitize_filename(filename):
-    return re.sub(r'[\\/*?:"<>|]', "", str(filename)).replace(" ", "_")
+    # Mengambil URI PostgreSQL dari Secrets Streamlit
+    return psycopg2.connect(st.secrets["postgres"]["url"])
 
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 1. TABEL MASTER_SPK
+    # 1. TABEL MASTER_SPK (PostgreSQL Menggunakan SERIAL)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS master_spk (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             no_spk TEXT,
             kontraktor TEXT,
             jenis_pekerjaan TEXT,
@@ -80,16 +94,11 @@ def init_db():
         )
     ''')
 
-    cursor.execute("PRAGMA table_info(master_spk)")
-    cols_mast = [col[1] for col in cursor.fetchall()]
-    if 'catatan' not in cols_mast:
-        cursor.execute("ALTER TABLE master_spk ADD COLUMN catatan TEXT")
-
     # 2. TABEL LAPORAN_MINGGUAN
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS laporan_mingguan (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            waktu_input DATETIME DEFAULT CURRENT_TIMESTAMP,
+            id SERIAL PRIMARY KEY,
+            waktu_input TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             no_spk TEXT,
             jenis_pekerjaan TEXT,
             kontraktor TEXT,
@@ -107,8 +116,8 @@ def init_db():
     # 3. TABEL HISTORY_PROGRESS
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS history_progress (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            waktu_input DATETIME DEFAULT CURRENT_TIMESTAMP,
+            id SERIAL PRIMARY KEY,
+            waktu_input TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             no_spk TEXT,
             jenis_pekerjaan TEXT,
             kontraktor TEXT,
@@ -125,7 +134,6 @@ def init_db():
     conn.close()
 
 init_db()
-
 # ==========================================
 # FUNGSI EXPORT EXCEL
 # ==========================================
@@ -607,43 +615,42 @@ elif menu == MENU_INPUT:
             
             if submit_btn:
                 if prog_ini < prog_terakhir:
-                    st.error("⚠️ Progress minggu ini tidak boleh lebih kecil dari minggu lalu (progress bersifat akumulatif)!")
+                    st.error("⚠️ Progress minggu ini tidak boleh lebih kecil dari minggu lalu!")
                 else:
-                    import time
-                    ts = int(time.time())
-                    spk_fniz = sanitize_filename(spk_data_selected['no_spk'])
-                    
-                    if f_upload_1:
-                        path_f1_final = os.path.join(UPLOAD_DIR, f"{spk_fniz}_f1_{ts}.jpg")
-                        with open(path_f1_final, "wb") as f: 
-                            f.write(f_upload_1.getbuffer())
+                    path_f1_final = existing_foto_1
+                    path_f2_final = existing_foto_2
 
+                    # Upload Foto 1 ke Cloudinary
+                    if f_upload_1:
+                        res_1 = cloudinary.uploader.upload(f_upload_1)
+                        path_f1_final = res_1.get("secure_url")
+
+                    # Upload Foto 2 ke Cloudinary
                     if f_upload_2:
-                        path_f2_final = os.path.join(UPLOAD_DIR, f"{spk_fniz}_f2_{ts}.jpg")
-                        with open(path_f2_final, "wb") as f: 
-                            f.write(f_upload_2.getbuffer())
-                    
+                        res_2 = cloudinary.uploader.upload(f_upload_2)
+                        path_f2_final = res_2.get("secure_url")
+
                     penambahan_week = prog_ini - prog_terakhir
 
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
-                        cursor.execute("DELETE FROM laporan_mingguan WHERE no_spk=? AND jenis_pekerjaan=?", (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan']))
+                        cursor.execute("DELETE FROM laporan_mingguan WHERE no_spk=%s AND jenis_pekerjaan=%s", (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan']))
                         cursor.execute("""
                             INSERT INTO laporan_mingguan (
                                 no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan, 
                                 progress_minggu_lalu, progress_minggu_ini, catatan, foto_1, foto_2, waktu_input
-                            ) VALUES (?,?,?,?,?,?,?,?,?,?,?, CURRENT_TIMESTAMP)""", 
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)""", 
                             (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan'], spk_data_selected['kontraktor'], spk_data_selected['unit'], int(spk_data_selected['jumlah'] or 1), spk_data_selected['nilai_pekerjaan'], prog_terakhir, prog_ini, catatan_lap, path_f1_final, path_f2_final))
                         
                         cursor.execute("""
                             INSERT INTO history_progress (
                                 no_spk, jenis_pekerjaan, kontraktor, unit, 
                                 progress_minggu_lalu, progress_minggu_ini, progres_penambahan, catatan, foto_1, foto_2, waktu_input
-                            ) VALUES (?,?,?,?,?,?,?,?,?,?, CURRENT_TIMESTAMP)""",
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)""",
                             (spk_data_selected['no_spk'], spk_data_selected['jenis_pekerjaan'], spk_data_selected['kontraktor'], spk_data_selected['unit'], prog_terakhir, prog_ini, penambahan_week, catatan_lap, path_f1_final, path_f2_final))
                         
                         conn.commit()
-                    st.success(f"✅ Laporan mingguan untuk SPK '{selected_spk_no}' - '{selected_pekerjaan}' berhasil disimpan!")
+                    st.success(f"✅ Laporan progress untuk SPK {spk_data_selected['no_spk']} berhasil disimpan!")
                     st.rerun()
 
     with tab_i_bangka:
