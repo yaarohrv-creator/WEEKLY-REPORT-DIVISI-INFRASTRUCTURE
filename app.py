@@ -864,7 +864,11 @@ elif menu == MENU_MASTER:
                 kontraktor = st.text_input("Kontraktor*", placeholder="CV. SELAMAT JAYA")
                 nilai_spk_utama = st.number_input("Total Nilai Kontrak / SPK Utama (Rp)", min_value=0.0, step=1000000.0, format="%.2f")
             with col2:
-                unit = st.text_input("Unit / Wilayah*", placeholder="BANGKA / BELITUNG")
+                unit = st.selectbox(
+    "Unit / Wilayah*", 
+    options=["BANGKA", "BELITUNG"],
+    index=0
+)
                 lokasi = st.text_input("Lokasi", placeholder="BPRE")
                 catatan = st.text_area("Catatan")
 
