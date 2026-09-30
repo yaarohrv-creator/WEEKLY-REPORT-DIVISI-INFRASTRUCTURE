@@ -698,28 +698,27 @@ elif menu == MENU_MASTER:
     # FUNGSI UNTUK MENAMPILKAN TABEL MASTER BERDASARKAN WILAYAH
     # ---------------------------------------------------------
     def render_master_wilayah(pola_wilayah, tab_key):
-    st.subheader(f"📋 Master Data Wilayah {tab_key.title()}")
-    
-    with get_db_connection() as conn:
-        df_master = pd.read_sql_query("SELECT * FROM master_spk ORDER BY id ASC", conn)
-    
-    if not df_master.empty:
-        if tab_key == "bangka":
-            df_filtered = df_master[df_master['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)].copy()
+        st.subheader(f"📋 Master Data Wilayah {tab_key.title()}")
+        
+        with get_db_connection() as conn:
+            df_master = pd.read_sql_query("SELECT * FROM master_spk ORDER BY id ASC", conn)
+        
+        if not df_master.empty:
+            if tab_key == "bangka":
+                df_filtered = df_master[df_master['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)].copy()
+            else:
+                pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
+                df_filtered = df_master[
+                    df_master['unit'].astype(str).str.contains(pola_belitung, case=False, na=False) |
+                    (~df_master['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
+                ].copy()
         else:
-            pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
-            df_filtered = df_master[
-                df_master['unit'].astype(str).str.contains(pola_belitung, case=False, na=False) |
-                (~df_master['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
-            ].copy()
-    else:
-        df_filtered = pd.DataFrame()
+            df_filtered = pd.DataFrame()
 
-    if df_filtered.empty:
-        st.info(f"💡 Belum ada data SPK terdaftar untuk wilayah {tab_key.title()}.")
-        return
-
-               # 1. Simpan ID asli database ke kolom real_id
+        if df_filtered.empty:
+            st.info(f"💡 Belum ada data SPK terdaftar untuk wilayah {tab_key.title()}.")
+        else:
+            # 1. Simpan ID asli database ke kolom real_id
             df_filtered['real_id'] = df_filtered['id']
 
             # 2. Buat kolom 'No' berurut secara otomatis (1, 2, 3, dst.)
