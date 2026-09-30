@@ -686,29 +686,10 @@ elif menu == MENU_INPUT:
 # =========================================================
 elif menu == MENU_MASTER:
     st.title("⚙️ Kelola Master Data Pekerjaan / SPK")
-    
-    # Auto-check & buat kolom lokasi jika belum ada di database
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    DO $$ 
-                    BEGIN 
-                        IF NOT EXISTS (
-                            SELECT 1 FROM information_schema.columns 
-                            WHERE table_name='master_spk' AND column_name='lokasi'
-                        ) THEN 
-                            ALTER TABLE master_spk ADD COLUMN lokasi VARCHAR(255);
-                        END IF;
-                    END $$;
-                """)
-                conn.commit()
-    except Exception as e:
-        pass
 
     tab_m_bangka, tab_m_belitung, tab_m_semua, tab_tambah = st.tabs([
-        "🌴 Master Bangka",
-        "⛵ Master Belitung",
+        "🏝️ Master Bangka", 
+        "🏖️ Master Belitung", 
         "📋 Semua Master SPK",
         "➕ Tambah SPK Baru"
     ])
