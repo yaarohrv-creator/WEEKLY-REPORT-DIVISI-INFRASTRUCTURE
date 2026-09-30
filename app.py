@@ -86,6 +86,12 @@ def init_db():
                     );
                 ''')
 
+                # AUTO MIGRATION: Tambahkan kolom nilai_spk_utama jika tabel sudah terlanjur dibuat tanpa kolom ini
+                cursor.execute('''
+                    ALTER TABLE master_spk 
+                    ADD COLUMN IF NOT EXISTS nilai_spk_utama REAL DEFAULT 0;
+                ''')
+
                 # 2. TABEL LAPORAN_MINGGUAN
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS laporan_mingguan (
