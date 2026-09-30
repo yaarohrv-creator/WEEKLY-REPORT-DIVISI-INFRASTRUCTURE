@@ -2,12 +2,16 @@ import os
 import io
 import re
 import time
-import urllib.request
+import requests
 import psycopg2
 import pandas as pd
 import streamlit as st
 import cloudinary
 import cloudinary.uploader
+
+# Modul untuk styling dan export Excel
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 # Konfigurasi Cloudinary dari Secrets Streamlit Cloud
 cloudinary.config(
@@ -15,10 +19,6 @@ cloudinary.config(
     api_key=st.secrets["cloudinary"]["api_key"],
     api_secret=st.secrets["cloudinary"]["api_secret"]
 )
-
-# Modul untuk styling dan export Excel
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
 
 # --- LIBRARY UNTUK MEMPROSES GAMBAR ---
 try:
@@ -32,7 +32,7 @@ except ImportError:
 # Konfigurasi Halaman Streamlit
 st.set_page_config(page_title="Sistem Progress Proyek", layout="wide")
 
-# Folder Penyimpanan Foto
+# Folder Penyimpanan Sementara/Uploads jika dibutuhkan
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
@@ -70,28 +70,23 @@ def init_db():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
-               -- 1. Buat/Pastikan tabel master_spk sebagai tabel utama (Header)
-CREATE TABLE IF NOT EXISTS master_spk (
-    id SERIAL PRIMARY KEY,
-    no_spk VARCHAR(100) UNIQUE NOT NULL,
-    kontraktor VARCHAR(150) NOT NULL,
-    unit VARCHAR(50) NOT NULL,
-    nilai_kontrak_spk NUMERIC(15, 2) DEFAULT 0,
-    catatan TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+                # 1. TABEL MASTER_SPK
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS master_spk (
+                        id SERIAL PRIMARY KEY,
+                        no_spk TEXT,
+                        kontraktor TEXT,
+                        jenis_pekerjaan TEXT,
+                        unit TEXT,
+                        jumlah INTEGER DEFAULT 1,
+                        nilai_spk_utama REAL DEFAULT 0,
+                        nilai_pekerjaan REAL DEFAULT 0,
+                        catatan TEXT,
+                        UNIQUE(no_spk, jenis_pekerjaan)
+                    );
+                ''')
 
--- 2. Buat tabel rincian_pekerjaan_spk sebagai rincian sub-pekerjaan (Detail)
-CREATE TABLE IF NOT EXISTS rincian_pekerjaan_spk (
-    id SERIAL PRIMARY KEY,
-    no_spk VARCHAR(100) REFERENCES master_spk(no_spk) ON DELETE CASCADE ON UPDATE CASCADE,
-    jenis_pekerjaan VARCHAR(150) NOT NULL,
-    nilai_kontrak_pekerjaan NUMERIC(15, 2) NOT NULL DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT unique_spk_pekerjaan UNIQUE (no_spk, jenis_pekerjaan)
-);
-
-                # 3. TABEL LAPORAN_MINGGUAN
+                # 2. TABEL LAPORAN_MINGGUAN
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS laporan_mingguan (
                         id SERIAL PRIMARY KEY,
@@ -110,7 +105,7 @@ CREATE TABLE IF NOT EXISTS rincian_pekerjaan_spk (
                     );
                 ''')
 
-                # 4. TABEL HISTORY_PROGRESS
+                # 3. TABEL HISTORY_PROGRESS
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS history_progress (
                         id SERIAL PRIMARY KEY,
@@ -217,20 +212,19 @@ def generate_excel_full_feature(df):
                 cell_p = ws.cell(row=current_row, column=current_col)
                 cell_p.border = border_standard
                 
-                if path_or_url and str(path_or_url).strip() and has_pil:
+                if path_or_url and has_pil:
                     try:
-                        str_path = str(path_or_url).strip()
-                        if str_path.startswith("http://") or str_path.startswith("https://"):
-                            req = urllib.request.Request(str_path, headers={'User-Agent': 'Mozilla/5.0'})
-                            with urllib.request.urlopen(req) as response:
-                                img_data = response.read()
-                            pil_img = PILImage.open(io.BytesIO(img_data))
-                        elif os.path.exists(str_path):
-                            pil_img = PILImage.open(str_path)
+                        # Dukungan untuk URL (Cloudinary) maupun file lokal
+                        if str(path_or_url).startswith("http://") or str(path_or_url).startswith("https://"):
+                            resp = requests.get(path_or_url, stream=True)
+                            if resp.status_code == 200:
+                                pil_img = PILImage.open(io.BytesIO(resp.content))
+                            else:
+                                raise Exception("Gagal mengunduh foto dari URL")
+                        elif os.path.exists(str(path_or_url)):
+                            pil_img = PILImage.open(path_or_url)
                         else:
-                            cell_p.value = "Foto tidak ditemukan"
-                            cell_p.alignment = align_center
-                            return
+                            raise Exception("File lokal tidak ditemukan")
 
                         orig_w, orig_h = pil_img.size
                         target_width_px = int((target_col_width * 7.5) - 5)
@@ -619,9 +613,6 @@ elif menu == MENU_INPUT:
                 f_upload_1 = st.file_uploader("Upload Foto 1", type=["jpg", "jpeg", "png"], key=f"f1_{tab_key_prefix}")
                 f_upload_2 = st.file_uploader("Upload Foto 2", type=["jpg", "jpeg", "png"], key=f"f2_{tab_key_prefix}")
             
-            path_f1_final = existing_foto_1
-            path_f2_final = existing_foto_2
-
             submit_btn = st.form_submit_button("💾 Simpan Laporan Minggu Ini")
             
             if submit_btn:
@@ -665,7 +656,7 @@ elif menu == MENU_INPUT:
                     st.rerun()
 
     with tab_i_bangka:
-        st.subheader("🏝️ Input Progress - Wilayah Bangka")
+        st.subheader("🏝️️ Input Progress - Wilayah Bangka")
         if df_master_all.empty:
             df_bangka_master = pd.DataFrame()
         else:
@@ -690,187 +681,136 @@ elif menu == MENU_INPUT:
 elif menu == MENU_MASTER:
     st.title("⚙️ Kelola Master Data Pekerjaan / SPK")
 
+    # Tiga Tab Sesuai Tampilan UI
     tab_bangka, tab_belitung, tab_tambah = st.tabs([
         "🌴 Master Data Bangka", 
         "⛵ Master Data Belitung", 
         "➕ Tambah SPK / Pekerjaan Baru"
     ])
 
-    def render_master_wilayah(wilayah_name):
-        st.subheader(f"📋 Master Data Wilayah {wilayah_name.title()}")
+    # ---------------------------------------------------------
+    # FUNGSI UNTUK MENAMPILKAN TABEL MASTER BERDASARKAN WILAYAH
+    # ---------------------------------------------------------
+    def render_master_wilayah(pola_wilayah, tab_key):
+        st.subheader(f"📋 Master Data Wilayah {tab_key.title()}")
         
         with get_db_connection() as conn:
-            query = "SELECT * FROM master_spk ORDER BY id ASC"
-            df_master = pd.read_sql_query(query, conn)
-
-        if df_master.empty:
-            st.info("💡 Belum ada data master SPK.")
-            return
-
-        if wilayah_name.lower() == "bangka":
-            df_filtered = df_master[df_master['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)]
+            df_master = pd.read_sql_query("SELECT * FROM master_spk ORDER BY id ASC", conn)
+        
+        if not df_master.empty:
+            if tab_key == "bangka":
+                df_filtered = df_master[df_master['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)]
+            else:
+                pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
+                df_filtered = df_master[
+                    df_master['unit'].astype(str).str.contains(pola_belitung, case=False, na=False) |
+                    (~df_master['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
+                ]
         else:
-            pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
-            df_filtered = df_master[
-                df_master['unit'].astype(str).str.contains(pola_belitung, case=False, na=False) |
-                (~df_master['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
-            ]
+            df_filtered = pd.DataFrame()
 
         if df_filtered.empty:
-            st.info(f"💡 Tidak ada data master untuk wilayah {wilayah_name.title()}.")
-            return
+            st.info(f"💡 Belum ada data SPK terdaftar untuk wilayah {tab_key.title()}.")
+        else:
+            edited_master = st.data_editor(
+                df_filtered,
+                num_rows="dynamic",
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "id": st.column_config.NumberColumn("ID", disabled=True),
+                    "no_spk": st.column_config.TextColumn("Nomor SPK", required=True),
+                    "kontraktor": st.column_config.TextColumn("Kontraktor"),
+                    "jenis_pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan", required=True),
+                    "unit": st.column_config.TextColumn("Unit / Wilayah"),
+                    "jumlah": st.column_config.NumberColumn("Jumlah", format="%d"),
+                    "nilai_spk_utama": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %d"),
+                    "nilai_pekerjaan": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %d"),
+                    "catatan": st.column_config.TextColumn("Catatan"),
+                },
+                key=f"editor_master_{tab_key}"
+            )
 
-        editor_key = f"master_editor_{wilayah_name.lower()}"
-        edited_master = st.data_editor(
-            df_filtered,
-            num_rows="dynamic",
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "id": None,
-                "no_spk": st.column_config.TextColumn("Nomor SPK"),
-                "kontraktor": st.column_config.TextColumn("Kontraktor"),
-                "jenis_pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan"),
-                "unit": st.column_config.TextColumn("Unit Proyek"),
-                "jumlah": st.column_config.NumberColumn("Jumlah", format="%d"),
-                "nilai_spk_utama": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %d"),
-                "nilai_pekerjaan": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %d"),
-                "catatan": st.column_config.TextColumn("Catatan")
-            },
-            key=editor_key
-        )
-
-        # Proses Hapus Baris Master
-        if editor_key in st.session_state and "deleted_rows" in st.session_state[editor_key]:
-            deleted_indices = st.session_state[editor_key]["deleted_rows"]
-            if deleted_indices:
+            # Simpan Perubahan Data Master
+            if st.button("💾 Simpan Perubahan Master Data", key=f"btn_save_master_{tab_key}"):
                 with get_db_connection() as conn:
                     cursor = conn.cursor()
-                    for idx in deleted_indices:
-                        if idx < len(df_filtered):
-                            row_del = df_filtered.iloc[idx]
-                            m_id = row_del.get('id')
-                            if pd.notna(m_id):
-                                cursor.execute("DELETE FROM master_spk WHERE id = %s", (int(m_id),))
-                    conn.commit()
-                st.success("✅ Data master SPK berhasil dihapus!")
-                st.rerun()
-
-        if st.button("💾 Simpan Perubahan Master", key=f"btn_save_m_{wilayah_name.lower()}"):
-            with get_db_connection() as conn:
-                cursor = conn.cursor()
-                for idx, row in edited_master.iterrows():
-                    if pd.notna(row.get('id')):
+                    for idx, row in edited_master.iterrows():
                         cursor.execute("""
-                            UPDATE master_spk
+                            UPDATE master_spk 
                             SET no_spk=%s, kontraktor=%s, jenis_pekerjaan=%s, unit=%s, 
                                 jumlah=%s, nilai_spk_utama=%s, nilai_pekerjaan=%s, catatan=%s
                             WHERE id=%s
                         """, (
-                            row.get('no_spk'), row.get('kontraktor'), row.get('jenis_pekerjaan'),
-                            row.get('unit'), int(row.get('jumlah') or 1), row.get('nilai_spk_utama'),
-                            row.get('nilai_pekerjaan'), row.get('catatan'), int(row.get('id'))
+                            row['no_spk'], row['kontraktor'], row['jenis_pekerjaan'], row['unit'],
+                            row['jumlah'], row['nilai_spk_utama'], row['nilai_pekerjaan'], row['catatan'],
+                            row['id']
                         ))
-                conn.commit()
-            st.success("✅ Master data SPK berhasil diperbarui!")
-            st.rerun()
+                    conn.commit()
+                st.success("✅ Perubahan Master Data berhasil disimpan!")
+                st.rerun()
 
     with tab_bangka:
-        render_master_wilayah("Bangka")
+        render_master_wilayah("BANGKA", "bangka")
 
     with tab_belitung:
-        render_master_wilayah("Belitung")
+        render_master_wilayah("BELITUNG", "belitung")
 
+    # ---------------------------------------------------------
+    # TAB TAMBAH SPK / PEKERJAAN BARU
+    # ---------------------------------------------------------
     with tab_tambah:
-        st.subheader("➕ Tambah Data SPK / Pekerjaan Baru")
+        st.subheader("➕ Tambah Master SPK / Pekerjaan Baru")
         
-        input_mode = st.radio("Metode Input:", ["Form Input Manual", "Upload Excel / CSV (Bulk Import)"])
-
-        if input_mode == "Form Input Manual":
-            with st.form("form_add_spk", clear_on_submit=True):
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    in_no_spk = st.text_input("Nomor SPK *")
-                    in_kontraktor = st.text_input("Nama Kontraktor *")
-                    in_jenis_pekerjaan = st.text_input("Jenis Pekerjaan *")
-                    in_unit = st.selectbox("Unit / Wilayah Proyek *", ["Bangka", "Belitung", "BPSL", "BPRE", "BPT"])
-                
-                with col_b:
-                    in_jumlah = st.number_input("Jumlah Unit/Pekerjaan", min_value=1, value=1, step=1)
-                    in_nilai_spk = st.number_input("Nilai SPK Utama (Rp)", min_value=0.0, value=0.0, step=100000.0)
-                    in_nilai_pek = st.number_input("Nilai Pekerjaan Ini (Rp)", min_value=0.0, value=0.0, step=100000.0)
-                    in_catatan = st.text_area("Catatan Tambahan")
-
-                btn_submit_spk = st.form_submit_button("➕ Tambahkan ke Master SPK")
-
-                if btn_submit_spk:
-                    if not in_no_spk or not in_kontraktor or not in_jenis_pekerjaan:
-                        st.error("⚠️ Harap isi semua kolom wajib (*)")
-                    else:
-                        try:
-                            with get_db_connection() as conn:
-                                cursor = conn.cursor()
-                                cursor.execute("""
-                                    INSERT INTO master_spk (no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_spk_utama, nilai_pekerjaan, catatan)
-                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                                """, (in_no_spk.strip(), in_kontraktor.strip(), in_jenis_pekerjaan.strip(), in_unit, in_jumlah, in_nilai_spk, in_nilai_pek, in_catatan))
-                                conn.commit()
-                            st.success(f"✅ SPK '{in_no_spk}' berhasil ditambahkan!")
-                            st.rerun()
-                        except psycopg2.IntegrityError:
-                            st.error("⚠️ Kombinasi Nomor SPK dan Jenis Pekerjaan tersebut sudah terdaftar di database.")
-                        except Exception as e:
-                            st.error(f"❌ Gagal menyimpan data: {e}")
-
-        else:
-            st.info("💡 Pastikan file Excel/CSV memiliki kolom: `no_spk`, `kontraktor`, `jenis_pekerjaan`, `unit`, `jumlah`, `nilai_spk_utama`, `nilai_pekerjaan`, `catatan`")
-            uploaded_file = st.file_uploader("Pilih File Excel/CSV", type=["xlsx", "xls", "csv"])
+        with st.form("form_tambah_master_spk", clear_on_submit=True):
+            col_m1, col_m2 = st.columns(2)
             
-            if uploaded_file:
-                try:
-                    if uploaded_file.name.endswith('.csv'):
-                        df_import = pd.read_csv(uploaded_file)
-                    else:
-                        df_import = pd.read_excel(uploaded_file)
+            with col_m1:
+                input_no_spk = st.text_input("Nomor SPK *", placeholder="Contoh: SPK/INFRA/2026/001")
+                input_kontraktor = st.text_input("Nama Kontraktor", placeholder="Contoh: PT. Karya Utama")
+                input_jenis_pekerjaan = st.text_input("Jenis Pekerjaan *", placeholder="Contoh: Pekerjaan Pengecoran Jalan")
+                input_unit = st.selectbox("Unit / Wilayah Proyek", ["BANGKA", "BELITUNG"])
 
-                    st.write("📌 **Pratinjau Data Impor:**")
-                    st.dataframe(df_import.head())
+            with col_m2:
+                input_jumlah = st.number_input("Jumlah Unit/Item", min_value=1, value=1, step=1)
+                input_nilai_spk = st.number_input("Nilai Total SPK Utama (Rp)", min_value=0.0, step=100000.0, format="%.2f")
+                input_nilai_pekerjaan = st.number_input("Nilai Pekerjaan Ini (Rp)", min_value=0.0, step=100000.0, format="%.2f")
+                input_catatan = st.text_area("Catatan Tambahan")
 
-                    if st.button("🚀 Import Semua Data ke Master Database"):
-                        count_success = 0
-                        count_fail = 0
+            submit_master = st.form_submit_button("➕ Tambah Data Master SPK")
+
+            if submit_master:
+                if not input_no_spk.strip() or not input_jenis_pekerjaan.strip():
+                    st.error("⚠️ Nomor SPK dan Jenis Pekerjaan wajib diisi!")
+                else:
+                    try:
                         with get_db_connection() as conn:
                             cursor = conn.cursor()
-                            for _, row in df_import.iterrows():
-                                try:
-                                    cursor.execute("""
-                                        INSERT INTO master_spk (no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_spk_utama, nilai_pekerjaan, catatan)
-                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                                        ON CONFLICT (no_spk, jenis_pekerjaan) DO UPDATE SET
-                                            kontraktor = EXCLUDED.kontraktor,
-                                            unit = EXCLUDED.unit,
-                                            jumlah = EXCLUDED.jumlah,
-                                            nilai_spk_utama = EXCLUDED.nilai_spk_utama,
-                                            nilai_pekerjaan = EXCLUDED.nilai_pekerjaan,
-                                            catatan = EXCLUDED.catatan
-                                    """, (
-                                        str(row.get('no_spk', '')).strip(),
-                                        str(row.get('kontraktor', '')).strip(),
-                                        str(row.get('jenis_pekerjaan', '')).strip(),
-                                        str(row.get('unit', '')).strip(),
-                                        int(row.get('jumlah', 1) if pd.notna(row.get('jumlah')) else 1),
-                                        float(row.get('nilai_spk_utama', 0) if pd.notna(row.get('nilai_spk_utama')) else 0),
-                                        float(row.get('nilai_pekerjaan', 0) if pd.notna(row.get('nilai_pekerjaan')) else 0),
-                                        str(row.get('catatan', '')) if pd.notna(row.get('catatan')) else ''
-                                    ))
-                                    count_success += 1
-                                except Exception:
-                                    count_fail += 1
-                            conn.commit()
-                        st.success(f"✅ Berhasil mengimpor/memperbarui {count_success} data master!")
-                        if count_fail > 0:
-                            st.warning(f"⚠️ Terdapat {count_fail} baris yang gagal diimpor.")
-                        st.rerun()
+                            # Insert ke Master SPK
+                            cursor.execute("""
+                                INSERT INTO master_spk (
+                                    no_spk, kontraktor, jenis_pekerjaan, unit, jumlah, nilai_spk_utama, nilai_pekerjaan, catatan
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            """, (
+                                input_no_spk.strip(), input_kontraktor.strip(), input_jenis_pekerjaan.strip(),
+                                input_unit, input_jumlah, input_nilai_spk, input_nilai_pekerjaan, input_catatan.strip()
+                            ))
+                            
+                            # Inisialisasi awal ke laporan_mingguan agar langsung muncul di dashboard
+                            cursor.execute("""
+                                INSERT INTO laporan_mingguan (
+                                    no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan,
+                                    progress_minggu_lalu, progress_minggu_ini, catatan, waktu_input
+                                ) VALUES (%s, %s, %s, %s, %s, %s, 0, 0, %s, CURRENT_TIMESTAMP)
+                            """, (
+                                input_no_spk.strip(), input_jenis_pekerjaan.strip(), input_kontraktor.strip(),
+                                input_unit, input_jumlah, input_nilai_pekerjaan, input_catatan.strip()
+                            ))
 
-                except Exception as e:
-                    st.error(f"❌ Terjadi kesalahan saat membaca file: {e}")
+                            conn.commit()
+                        st.success(f"✅ Data Master SPK '{input_no_spk}' berhasil ditambahkan!")
+                        st.rerun()
+                    except psycopg2.IntegrityError:
+                        st.error("⚠️ Kombinasi Nomor SPK dan Jenis Pekerjaan ini sudah terdaftar dalam sistem!")
+                    except Exception as e:
+                        st.error(f"⚠️ Terjadi kesalahan saat menyimpan data: {e}")
