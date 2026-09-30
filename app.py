@@ -697,7 +697,7 @@ elif menu == MENU_MASTER:
    # ---------------------------------------------------------
     # FUNGSI UNTUK MENAMPILKAN TABEL MASTER BERDASARKAN WILAYAH
     # ---------------------------------------------------------
-    def render_master_wilayah(pola_wilayah, tab_key):
+def render_master_wilayah(pola_wilayah, tab_key):
     st.subheader(f"📋 Master Data Wilayah {tab_key.title()}")
     
     with get_db_connection() as conn:
@@ -747,13 +747,12 @@ elif menu == MENU_MASTER:
                 "NILAI PEKERJAAN (RP)": row['nilai_pekerjaan']
             })
 
-    # TAMBAHKAN BARIS INI DI SINI:
+    # Konversi daftar list ke DataFrame
     df_display = pd.DataFrame(rows)
 
-# Tampilkan Tabel Berstruktur Grouped
-st.dataframe(
-    df_display,
-    ...
+    # Tampilkan Tabel Berstruktur Grouped
+    st.dataframe(
+        df_display,
         use_container_width=True,
         hide_index=True,
         column_config={
