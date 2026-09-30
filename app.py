@@ -697,100 +697,70 @@ elif menu == MENU_MASTER:
    # ---------------------------------------------------------
     # FUNGSI UNTUK MENAMPILKAN TABEL MASTER BERDASARKAN WILAYAH
     # ---------------------------------------------------------
-    def render_master_wilayah(pola_wilayah, tab_key):
-        st.subheader(f"📋 Master Data Wilayah {tab_key.title()}")
-        
-        with get_db_connection() as conn:
-            df_master = pd.read_sql_query("SELECT * FROM master_spk ORDER BY id ASC", conn)
-        
-        if not df_master.empty:
-            if tab_key == "bangka":
-                df_filtered = df_master[df_master['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)].copy()
-            else:
-                pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
-                df_filtered = df_master[
-                    df_master['unit'].astype(str).str.contains(pola_belitung, case=False, na=False) |
-                    (~df_master['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
-                ].copy()
+   def render_master_wilayah(pola_wilayah, tab_key):
+    st.subheader(f"📋 Master Data Wilayah {tab_key.title()}")
+    
+    with get_db_connection() as conn:
+        df_master = pd.read_sql_query("SELECT * FROM master_spk ORDER BY id ASC", conn)
+    
+    if not df_master.empty:
+        if tab_key == "bangka":
+            df_filtered = df_master[df_master['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)].copy()
         else:
-            df_filtered = pd.DataFrame()
+            pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
+            df_filtered = df_master[
+                df_master['unit'].astype(str).str.contains(pola_belitung, case=False, na=False) |
+                (~df_master['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
+            ].copy()
+    else:
+        df_filtered = pd.DataFrame()
 
-        if df_filtered.empty:
-            st.info(f"💡 Belum ada data SPK terdaftar untuk wilayah {tab_key.title()}.")
-        else:
-            # 1. Simpan ID asli database ke kolom real_id
-            df_filtered['real_id'] = df_filtered['id']
+    if df_filtered.empty:
+        st.info(f"💡 Belum ada data SPK terdaftar untuk wilayah {tab_key.title()}.")
+        return
 
-            # 2. Buat kolom 'No' berurut secara otomatis (1, 2, 3, dst.)
-            df_filtered.reset_index(drop=True, inplace=True)
-            df_filtered.insert(0, 'No', range(1, len(df_filtered) + 1))
+    # Menyusun data dengan struktur Grouped per SPK (seperti Excel)
+    rows = []
+    grouped = df_filtered.groupby('no_spk', sort=False)
 
-            # Susun urutan kolom tampilan
-            cols_order = [
-                'No', 'no_spk', 'kontraktor', 'jenis_pekerjaan', 'unit', 
-                'jumlah', 'nilai_pekerjaan', 'nilai_spk_utama', 'catatan', 'real_id'
-            ]
-            
-            existing_cols = [c for c in cols_order if c in df_filtered.columns]
+    for no_spk, group in grouped:
+        kontraktor = group.iloc[0].get('kontraktor', '-')
+        unit = group.iloc[0].get('unit', '-')
+        catatan = group.iloc[0].get('catatan', '-')
+        
+        # Hitung Total Nilai Kontrak dari akumulasi rincian pekerjaan
+        total_kontrak = group['nilai_pekerjaan'].sum()
 
-            editor_key = f"editor_master_{tab_key}"
-            edited_master = st.data_editor(
-                df_filtered[existing_cols],
-                num_rows="dynamic",
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "real_id": None,  # Sembunyikan ID asli dari database
-                    "No": st.column_config.NumberColumn("No", disabled=True),  # Nomor urut otomatis
-                    "no_spk": st.column_config.TextColumn("Nomor SPK", required=True),
-                    "kontraktor": st.column_config.TextColumn("Kontraktor"),
-                    "jenis_pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan", required=True),
-                    "unit": st.column_config.TextColumn("Unit / Wilayah"),
-                    "jumlah": st.column_config.NumberColumn("Jumlah", format="%d"),
-                    "nilai_spk_utama": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %d"),
-                    "nilai_pekerjaan": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %d"),
-                    "catatan": st.column_config.TextColumn("Catatan"),
-                },
-                key=editor_key
-            )
+        info_header = (
+            f"SPK : {no_spk}\n"
+            f"KONTRAKTOR : {kontraktor}\n"
+            f"TOTAL NILAI KONTRAK : Rp {total_kontrak:,.0f}\n"
+            f"UNIT/WILAYAH : {unit}\n"
+            f"LOKASI/CATATAN : {catatan}"
+        )
 
-            # -------------------------------------------------------------------------
-            # DETEKSI BARIS DIHAPUS & PROSES HAPUS PERMANEN
-            # -------------------------------------------------------------------------
-            if editor_key in st.session_state and "deleted_rows" in st.session_state[editor_key]:
-                deleted_indices = st.session_state[editor_key]["deleted_rows"]
+        for i, (_, row) in enumerate(group.iterrows()):
+            rows.append({
+                "NOMOR SPK/KONTRAKTOR/UNIT WILAYAH/LOKASI": info_header if i == 0 else "",
+                "JENIS PEKERJAAN": row['jenis_pekerjaan'],
+                "JUMLAH": row['jumlah'],
+                "NILAI PEKERJAAN (RP)": row['nilai_pekerjaan']
+            })
 
-                if deleted_indices:
-                    with get_db_connection() as conn:
-                        cursor = conn.cursor()
-                        for idx in deleted_indices:
-                            if idx < len(df_filtered):
-                                row_to_del = df_filtered.iloc[idx]
-                                real_id = row_to_del.get('real_id')
-                                no_spk = str(row_to_del.get('no_spk', '')).strip()
-                                j_pek = str(row_to_del.get('jenis_pekerjaan', '')).strip()
+    df_display = pd.DataFrame(rows)
 
-                                if pd.notna(real_id):
-                                    cursor.execute("""
-                                        DELETE FROM laporan_mingguan 
-                                        WHERE LOWER(TRIM(no_spk)) = LOWER(%s) AND LOWER(TRIM(jenis_pekerjaan)) = LOWER(%s)
-                                    """, (no_spk, j_pek))
-
-                                    cursor.execute("""
-                                        DELETE FROM history_progress 
-                                        WHERE LOWER(TRIM(no_spk)) = LOWER(%s) AND LOWER(TRIM(jenis_pekerjaan)) = LOWER(%s)
-                                    """, (no_spk, j_pek))
-
-                                    cursor.execute("DELETE FROM master_spk WHERE id = %s", (int(real_id),))
-
-                        conn.commit()
-
-                    if editor_key in st.session_state:
-                        del st.session_state[editor_key]
-
-                    st.success("✅ Data berhasil dihapus permanen!")
-                    st.rerun()
-
+    # Tampilkan Tabel Berstruktur Grouped
+    st.dataframe(
+        df_display,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "NOMOR SPK/KONTRAKTOR/UNIT WILAYAH/LOKASI": st.column_config.TextColumn(width="medium"),
+            "JENIS PEKERJAAN": st.column_config.TextColumn(width="large"),
+            "JUMLAH": st.column_config.NumberColumn("JUMLAH", format="%d"),
+            "NILAI PEKERJAAN (RP)": st.column_config.NumberColumn("NILAI PEKERJAAN (RP)", format="Rp %d"),
+        }
+    )
             # -------------------------------------------------------------------------
             # SIMPAN PERUBAHAN EDIT TEKS / ANGKA
             # -------------------------------------------------------------------------
