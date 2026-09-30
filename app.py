@@ -719,57 +719,7 @@ elif menu == MENU_MASTER:
         st.info(f"💡 Belum ada data SPK terdaftar untuk wilayah {tab_key.title()}.")
         return
 
-    # Menyusun data dengan struktur Excel (Grouped per SPK)
-    rows = []
-    grouped = df_filtered.groupby('no_spk', sort=False)
-
-    for no_spk, group in grouped:
-        kontraktor = group.iloc[0].get('kontraktor', '-')
-        unit = group.iloc[0].get('unit', '-')
-        catatan = group.iloc[0].get('catatan', '-')
-        
-        # Hitung Total Nilai Kontrak dari akumulasi rincian pekerjaan
-        total_kontrak = group['nilai_pekerjaan'].sum()
-
-        info_header = (
-            f"SPK : {no_spk}\n"
-            f"KONTRAKTOR : {kontraktor}\n"
-            f"TOTAL NILAI KONTRAK : Rp {total_kontrak:,.0f}\n"
-            f"UNIT/WILAYAH : {unit}\n"
-            f"LOKASI/CATATAN : {catatan}"
-        )
-
-        for i, (_, row) in enumerate(group.iterrows()):
-            rows.append({
-                "NOMOR SPK/KONTRAKTOR/UNIT WILAYAH/LOKASI": info_header if i == 0 else "",
-                "JENIS PEKERJAAN": row['jenis_pekerjaan'],
-                "JUMLAH": row['jumlah'],
-                "NILAI PEKERJAAN (RP)": row['nilai_pekerjaan']
-            })
-
-    df_display = pd.DataFrame(rows)
-
-    # Tampilkan Tabel Berstruktur Grouped
-    st.dataframe(
-        df_display,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "NOMOR SPK/KONTRAKTOR/UNIT WILAYAH/LOKASI": st.column_config.TextColumn(width="medium"),
-            "JENIS PEKERJAAN": st.column_config.TextColumn(width="large"),
-            "JUMLAH": st.column_config.NumberColumn("JUMLAH", format="%d"),
-            "NILAI PEKERJAAN (RP)": st.column_config.NumberColumn("NILAI PEKERJAAN (RP)", format="Rp %d"),
-        }
-    )
-
-
-# BARIS SETELAH FUNGSI (JANGAN DIHAPUS):
-# with tab_bangka:
-#     render_master_wilayah("BANGKA", "bangka")
-#
-# with tab_belitung:
-#     render_master_wilayah("BELITUNG", "belitung")
-            # 1. Simpan ID asli database ke kolom real_id
+               # 1. Simpan ID asli database ke kolom real_id
             df_filtered['real_id'] = df_filtered['id']
 
             # 2. Buat kolom 'No' berurut secara otomatis (1, 2, 3, dst.)
