@@ -660,20 +660,30 @@ elif menu == MENU_INPUT:
 
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
+                        # Hapus data laporan lama untuk SPK & Jenis Pekerjaan ini jika ada
                         cursor.execute("DELETE FROM laporan_mingguan WHERE TRIM(LOWER(no_spk))=%s AND TRIM(LOWER(jenis_pekerjaan))=%s", (no_spk_clean.lower(), jenis_clean.lower()))
+                        
+                        # INSERT Laporan Mingguan Baru
                         cursor.execute("""
                             INSERT INTO laporan_mingguan (
                                 no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan, 
                                 progress_minggu_lalu, progress_minggu_ini, catatan, foto_1, foto_2, waktu_input
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)""", 
-                            (no_spk_clean, jenis_clean, kontraktor_clean, unit_clean, int(spk_data_selected['jumlah'] or 1), spk_data_selected['nilai_pekerjaan'], prog_terakhir, prog_ini, catatan_lap, path_f1_final, path_f2_final))
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                        """, (
+                            no_spk_clean, jenis_clean, kontraktor_clean, unit_clean, int(spk_data_selected['jumlah'] or 1), 
+                            spk_data_selected['nilai_pekerjaan'], prog_terakhir, prog_ini, catatan_lap, path_f1_final, path_f2_final
+                        ))
                         
+                        # INSERT Log History Progress Baru
                         cursor.execute("""
                             INSERT INTO history_progress (
                                 no_spk, jenis_pekerjaan, kontraktor, unit, 
                                 progress_minggu_lalu, progress_minggu_ini, progres_penambahan, catatan, foto_1, foto_2, waktu_input
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)""",
-                            (no_spk_clean, jenis_clean, kontraktor_clean, unit_clean, prog_terakhir, prog_ini, penambahan_week, catatan_lap, path_f1_final, path_f2_final))
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                        """, (
+                            no_spk_clean, jenis_clean, kontraktor_clean, unit_clean, prog_terakhir, prog_ini, 
+                            penambahan_week, catatan_lap, path_f1_final, path_f2_final
+                        ))
                         
                         conn.commit()
                     st.success(f"✅ Laporan progress untuk SPK {no_spk_clean} berhasil disimpan!")
