@@ -833,61 +833,105 @@ elif menu == MENU_MASTER:
         render_grouped_master_table(df_master_all, "m_semua")
 
     with tab_tambah:
-        st.subheader("➕ Tambah SPK Baru / Tambah Rincian Pekerjaan")
-        
-        # Ambil daftar SPK yang sudah ada untuk dropdown pilihan
-        list_spk_existing = ["-- BUAT SPK BARU --"] + sorted([s for s in df_master_all['no_spk'].dropna().unique().tolist() if s.strip() != ""])
-        
-        selected_option_spk = st.selectbox(
-            "Pilih SPK Yang Sudah Ada (Atau Pilih 'BUAT SPK BARU'):",
-            list_spk_existing,
-            key="select_spk_for_add"
-        )
+        st.subheader("📝 Form Tambah Data Master SPK")
 
-        with st.form("form_tambah_spk", clear_on_submit=True):
-            col_a, col_b = st.columns(2)
+        # Inisialisasi session state untuk jumlah baris rincian pekerjaan
+        if "num_items_spk" not in st.session_state:
+            st.session_state["num_items_spk"] = 1
+
+        def add_item_row():
+            st.session_state["num_items_spk"] += 1
+
+        # -------------------------------------------------------------
+        # 1. INFORMASI UTAMA SPK (HEADER)
+        # -------------------------------------------------------------
+        with st.expander("1. Informasi Utama SPK (Header)", expanded=True):
+            col_h1, col_h2 = st.columns(2)
+            with col_h1:
+                no_spk_input = st.text_input("Nomor SPK*", placeholder="048/PSM2/BPRE/BPSL/JKTO/INF/III/2026", key="add_no_spk")
+                kontraktor_input = st.text_input("Kontraktor*", placeholder="CV. SELAMAT JAYA", key="add_kontraktor")
+                catatan_header_input = st.text_area("Catatan Header", placeholder="Catatan umum SPK (opsional)", key="add_catatan_header")
             
-            with col_a:
-                if selected_option_spk == "-- BUAT SPK BARU --":
-                    no_spk_in = st.text_input("Nomor SPK Baru:")
-                    kontraktor_in = st.text_input("Nama Kontraktor:")
-                    unit_in = st.selectbox("Unit / Wilayah:", ["BANGKA", "BELITUNG"])
-                    lokasi_in = st.text_input("Lokasi (misal: BPRE, BPSL):")
-                else:
-                    # Otomatis mengambil data header dari SPK yang dipilih
-                    spk_info = df_master_all[df_master_all['no_spk'] == selected_option_spk].iloc[0]
-                    no_spk_in = selected_option_spk
-                    kontraktor_in = spk_info['kontraktor']
-                    unit_in = spk_info['unit']
-                    lokasi_in = spk_info.get('lokasi', '')
-                    
-                    st.info(f"📌 Menambahkan Rincian Pekerjaan ke **{no_spk_in}** ({kontraktor_in})")
+            with col_h2:
+                unit_input = st.selectbox("Unit / Wilayah*", ["BANGKA", "BELITUNG"], key="add_unit")
+                lokasi_input = st.text_input("Lokasi", placeholder="BPRE", key="add_lokasi")
 
-            with col_b:
-                jenis_in = st.text_input("Jenis Pekerjaan Baru:")
-                jumlah_in = st.number_input("Jumlah:", min_value=1, value=1)
-                nilai_in = st.number_input("Nilai Pekerjaan (Rp):", min_value=0.0, step=100000.0)
-                catatan_in = st.text_area("Catatan:")
-
-            btn_submit_spk = st.form_submit_button("💾 Simpan Data Pekerjaan")
+        # -------------------------------------------------------------
+        # 2. RINCIAN JENIS PEKERJAAN & NILAI PEKERJAAN
+        # -------------------------------------------------------------
+        st.subheader("🛠️ Rincian Jenis Pekerjaan & Nilai Pekerjaan")
+        
+        items_data = []
+        for i in range(st.session_state["num_items_spk"]):
+            st.markdown(f"**Pekerjaan #{i+1}**")
+            col_i1, col_i2, col_i3 = st.columns([3, 1, 2])
             
-            if btn_submit_spk:
-                if not no_spk_in or not jenis_in:
-                    st.error("⚠️ Nomor SPK dan Jenis Pekerjaan wajib diisi!")
-                else:
-                    try:
-                        with get_db_connection() as conn:
-                            cursor = conn.cursor()
+            with col_i1:
+                jp = st.text_input(f"Jenis Pekerjaan #{i+1} *", placeholder="Contoh: Pekerjaan Pengecoran Jalan", key=f"jp_{i}")
+            with col_i2:
+                jml = st.number_input(f"Jumlah #{i+1}", min_value=1, value=1, step=1, key=f"jml_{i}")
+            with col_i3:
+                np = st.number_input(f"Nilai Pekerjaan #{i+1} (Rp)", min_value=0.0, step=100000.0, format="%.2f", key=f"np_{i}")
+            
+            if jp.strip():
+                items_data.append({
+                    "jenis_pekerjaan": jp.strip(),
+                    "jumlah": jml,
+                    "nilai_pekerjaan": np
+                })
+
+        # Tombol untuk menambah baris rincian pekerjaan baru secara dinamis
+        st.button("➕ Tambah Baris Pekerjaan", on_click=add_item_row, key="btn_add_row_item")
+
+        st.markdown("---")
+
+        # Tombol Eksekusi Simpan Semua Data
+        if st.button("💾 Simpan Semua Data SPK & Pekerjaan", type="primary", key="btn_save_full_spk"):
+            if not no_spk_input.strip():
+                st.error("⚠️ Nomor SPK wajib diisi!")
+            elif not kontraktor_input.strip():
+                st.error("⚠️ Nama Kontraktor wajib diisi!")
+            elif len(items_data) == 0:
+                st.error("⚠️ Minimal harus mengisi 1 Jenis Pekerjaan!")
+            else:
+                try:
+                    with get_db_connection() as conn:
+                        cursor = conn.cursor()
+                        
+                        # Simpan setiap rincian pekerjaan ke database
+                        for item in items_data:
                             cursor.execute("""
-                                INSERT INTO master_spk (no_spk, kontraktor, jenis_pekerjaan, unit, lokasi, jumlah, nilai_pekerjaan, catatan)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                            """, (no_spk_in.strip(), kontraktor_in.strip() if isinstance(kontraktor_in, str) else "", jenis_in.strip(), unit_in, lokasi_in.strip() if isinstance(lokasi_in, str) else "", jumlah_in, nilai_in, catatan_in))
-                            conn.commit()
-                            
-                            # Akumulasi Ulang Nilai Total SPK Utama
-                            recalculate_spk_utama_totals(conn)
-                            
-                        st.success(f"✅ Jenis pekerjaan baru berhasil ditambahkan ke SPK {no_spk_in}!")
-                        st.rerun()
-                    except Exception as err:
-                        st.error(f"Gagal menambahkan data: {err}")
+                                INSERT INTO master_spk (
+                                    no_spk, kontraktor, jenis_pekerjaan, unit, lokasi, jumlah, nilai_pekerjaan, catatan
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                ON CONFLICT (no_spk, jenis_pekerjaan) 
+                                DO UPDATE SET 
+                                    kontraktor = EXCLUDED.kontraktor,
+                                    unit = EXCLUDED.unit,
+                                    lokasi = EXCLUDED.lokasi,
+                                    jumlah = EXCLUDED.jumlah,
+                                    nilai_pekerjaan = EXCLUDED.nilai_pekerjaan,
+                                    catatan = EXCLUDED.catatan;
+                            """, (
+                                no_spk_input.strip(),
+                                kontraktor_input.strip(),
+                                item["jenis_pekerjaan"],
+                                unit_input,
+                                lokasi_input.strip(),
+                                item["jumlah"],
+                                item["nilai_pekerjaan"],
+                                catatan_header_input.strip()
+                            ))
+                        
+                        conn.commit()
+                        
+                        # Hitung ulang akumulasi total Nilai SPK Utama secara otomatis
+                        recalculate_spk_utama_totals(conn)
+
+                    # Reset baris formulir kembali ke 1 setelah berhasil disimpan
+                    st.session_state["num_items_spk"] = 1
+                    st.success(f"✅ Data SPK {no_spk_input} beserta {len(items_data)} rincian pekerjaan berhasil disimpan!")
+                    st.rerun()
+
+                except Exception as err:
+                    st.error(f"⚠️ Gagal menyimpan data ke database: {err}")
