@@ -146,15 +146,14 @@ def generate_excel_full_feature(df):
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_excel = df.drop(columns=['real_id'], errors='ignore').copy()
         
+        # Buat dataframe untuk sheet pertama (Laporan Progress)
         df_progress = df_excel.drop(
             columns=['Foto 1', 'Foto 2', 'Pratinjau Foto 1', 'Pratinjau Foto 2'], 
             errors='ignore'
         ).copy()
         
-        try:
-            target_col_idx = df_progress.columns.get_loc('Catatan Pekerjaan Terbaru') + 1
-            df_progress.insert(target_col_idx, 'Dokumentasi', '') 
-        except Exception:
+        # Sisipkan kolom Dokumentasi di paling kanan jika belum ada
+        if 'Dokumentasi' not in df_progress.columns:
             df_progress['Dokumentasi'] = ''
 
         df_progress.to_excel(writer, index=False, sheet_name='Laporan Progress')
@@ -169,6 +168,7 @@ def generate_excel_full_feature(df):
         align_center = Alignment(horizontal="center", vertical="center")
         blue_link_font = Font(color="0000FF", underline="single")
 
+        # Styling Header Sheet 1
         for col_num in range(1, worksheet_progress.max_column + 1):
             cell = worksheet_progress.cell(row=1, column=col_num)
             cell.fill = header_fill
@@ -176,20 +176,23 @@ def generate_excel_full_feature(df):
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             cell.border = border_standard
 
+        # Styling Isi Sheet 1
         for row_idx in range(2, worksheet_progress.max_row + 1):
             for col_idx in range(1, worksheet_progress.max_column + 1):
                 cell = worksheet_progress.cell(row=row_idx, column=col_idx)
                 cell.border = border_standard
                 cell.alignment = Alignment(vertical="center")
 
+        # Lebar Kolom
         for col in worksheet_progress.columns:
             header_name = col[0].value
             if header_name != 'Dokumentasi':
                 max_len = max(len(str(cell.value or '')) for cell in col)
                 worksheet_progress.column_dimensions[get_column_letter(col[0].column)].width = max(max_len + 3, 12)
             else:
-                worksheet_progress.column_dimensions[get_column_letter(col[0].column)].width = 15
+                worksheet_progress.column_dimensions[get_column_letter(col[0].column)].width = 18
 
+        # --- SHEET 2: FOTO DOKUMENTASI ---
         LEBAR_KOLOM_FOTO = 50
         worksheet_foto.column_dimensions['A'].width = 40 
         worksheet_foto.column_dimensions['B'].width = LEBAR_KOLOM_FOTO 
@@ -206,14 +209,18 @@ def generate_excel_full_feature(df):
         job_map_targets = {}
         foto_row_idx = 2
         
-        for index, row in df_excel.iterrows():
-            judul_gabungan = f"SPK: {row.get('Nomor SPK', '')}\n\nPekerjaan: {row.get('Jenis Pekerjaan', '')}"
+        # Proses baris gambar di sheet Foto Dokumentasi
+        for idx_row, row in df_excel.iterrows():
+            no_spk_val = row.get('Nomor SPK', '') or row.get('no_spk', '')
+            jenis_val = row.get('Jenis Pekerjaan', '') or row.get('jenis_pekerjaan', '')
+            
+            judul_gabungan = f"SPK: {no_spk_val}\n\nPekerjaan: {jenis_val}"
             cell_j = worksheet_foto.cell(row=foto_row_idx, column=1, value=judul_gabungan)
             cell_j.alignment = Alignment(wrap_text=True, vertical="center", horizontal="left")
             cell_j.border = border_standard
             
-            if 'No' in row:
-                job_map_targets[row['No']] = foto_row_idx
+            # Simpan pemetaan indeks baris (baris Excel ke-2 dst berurutan dengan row index)
+            job_map_targets[idx_row + 2] = foto_row_idx
 
             worksheet_foto.row_dimensions[foto_row_idx].height = 250
 
@@ -221,7 +228,7 @@ def generate_excel_full_feature(df):
                 cell_p = ws.cell(row=current_row, column=current_col)
                 cell_p.border = border_standard
                 
-                if path_or_url and has_pil:
+                if path_or_url and str(path_or_url).strip() != "" and str(path_or_url) != "None" and has_pil:
                     try:
                         if str(path_or_url).startswith("http://") or str(path_or_url).startswith("https://"):
                             resp = requests.get(path_or_url, stream=True)
@@ -261,21 +268,18 @@ def generate_excel_full_feature(df):
 
             foto_row_idx += 1
 
+        # --- BUAT HYPERLINK DOKUMENTASI PADA SHEET 1 ---
         try:
-            no_col_idx = df_progress.columns.get_loc('No') + 1
             doc_col_idx = df_progress.columns.get_loc('Dokumentasi') + 1
-        except Exception:
-            no_col_idx, doc_col_idx = None, None
-
-        if no_col_idx and doc_col_idx:
             for p_row_idx in range(2, worksheet_progress.max_row + 1):
-                no_value = worksheet_progress.cell(row=p_row_idx, column=no_col_idx).value
-                if no_value in job_map_targets:
-                    target_photo_row = job_map_targets[no_value]
+                if p_row_idx in job_map_targets:
+                    target_photo_row = job_map_targets[p_row_idx]
                     cell_link = worksheet_progress.cell(row=p_row_idx, column=doc_col_idx, value="Lihat Foto")
                     cell_link.hyperlink = f"#'Foto Dokumentasi'!A{target_photo_row}"
                     cell_link.font = blue_link_font
                     cell_link.alignment = align_center
+        except Exception as e:
+            pass
 
     return output.getvalue()
 
