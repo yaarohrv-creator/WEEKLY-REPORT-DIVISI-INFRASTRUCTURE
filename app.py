@@ -806,7 +806,7 @@ elif menu == MENU_MASTER:
                 "ID": None, # Sembunyikan ID Primary Key
                 "Nomor SPK": st.column_config.TextColumn("Nomor SPK", width="medium"),
                 "Kontraktor": st.column_config.TextColumn("Kontraktor", width="medium"),
-                "Nilai SPK Utama (Rp)": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %'d", disabled=True), # Auto-calculated
+                "Nilai SPK Utama (Rp)": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %'d", disabled=True),
                 "Unit / Wilayah": st.column_config.TextColumn("Unit / Wilayah", width="small"),
                 "Lokasi": st.column_config.TextColumn("Lokasi", width="small"),
                 "Jenis Pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan", width="large", required=True),
@@ -823,7 +823,25 @@ elif menu == MENU_MASTER:
             try:
                 with get_db_connection() as conn:
                     cursor = conn.cursor()
+
+                    # -------------------------------------------------------------
+                    # 1. DETEKSI & HAPUS BARIS YANG DIHAPUS DARI STREAMLIT EDITOR
+                    # -------------------------------------------------------------
+                    # Ambil semua ID awal yang ada di tabel sebelum diedit
+                    original_ids = set(df_raw['id'].dropna().astype(int).tolist())
                     
+                    # Ambil ID yang tersisa setelah di-edit di Streamlit
+                    remaining_ids = set(edited_df['ID'].dropna().astype(int).tolist()) if 'ID' in edited_df.columns else set()
+
+                    # ID yang ada di database tapi hilang dari editor berarti HARUS DIHAPUS
+                    ids_to_delete = list(original_ids - remaining_ids)
+
+                    if ids_to_delete:
+                        cursor.execute("DELETE FROM master_spk WHERE id = ANY(%s)", (ids_to_delete,))
+
+                    # -------------------------------------------------------------
+                    # 2. UPDATE BARIS YANG MASIH TERSISA / DIBERSIHKAN
+                    # -------------------------------------------------------------
                     current_spk = ""
                     current_kontraktor = ""
                     current_unit = ""
@@ -831,13 +849,14 @@ elif menu == MENU_MASTER:
 
                     for idx, row in edited_df.iterrows():
                         # Forward-fill header SPK jika terdeteksi baris baru/kosong
-                        if str(row['Nomor SPK']).strip() != "":
+                        if str(row.get('Nomor SPK', '')).strip() != "":
                             current_spk = str(row['Nomor SPK']).strip()
                             current_kontraktor = str(row['Kontraktor']).strip()
                             current_unit = str(row['Unit / Wilayah']).strip()
                             current_lokasi = str(row['Lokasi']).strip()
 
-                        if pd.notnull(row.get('ID')) and row.get('ID') != "":
+                        row_id = row.get('ID')
+                        if pd.notnull(row_id) and row_id != "":
                             cursor.execute("""
                                 UPDATE master_spk 
                                 SET no_spk=%s, kontraktor=%s, jenis_pekerjaan=%s, unit=%s, 
@@ -847,14 +866,15 @@ elif menu == MENU_MASTER:
                                 current_spk, current_kontraktor, row['Jenis Pekerjaan'], 
                                 current_unit, current_lokasi, row['Jumlah'], 
                                 row['Nilai Pekerjaan (Rp)'], row.get('Catatan', ''),
-                                row['ID']
+                                int(row_id)
                             ))
+
                     conn.commit()
 
                     # Rekalkulasi Otomatis Total Nilai Kontrak Utama
                     recalculate_spk_utama_totals(conn)
 
-                st.success("✅ Perubahan Master Data berhasil disimpan dan Total SPK Utama diperbarui!")
+                st.success("✅ Perubahan Master Data (termasuk penghapusan baris) berhasil disimpan!")
                 st.rerun()
             except Exception as e:
                 st.error(f"⚠️ Gagal memperbarui data: {e}")
