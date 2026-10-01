@@ -568,13 +568,13 @@ elif menu == MENU_INPUT:
         st.markdown(f"""
 📌 **Detail SPK Dipilih:**
 
-* **Nomor SPK:** {selected_row['no_spk']}
-* **Kontraktor:** {selected_row['kontraktor']}
-* **Jenis Pekerjaan:** {selected_row['jenis_pekerjaan']}
-* **Unit/Wilayah:** {selected_row['unit']}
-* **Lokasi:** {selected_row.get('lokasi', '-')}  <-- TAMBAHKAN BARIS INI
-* **Jumlah:** {selected_row['jumlah']}
-* **Nilai Kontrak:** Rp {selected_row['nilai_pekerjaan']:,.2f}
+* **Nomor SPK:** {spk_data_selected['no_spk']}
+* **Kontraktor:** {spk_data_selected['kontraktor']}
+* **Jenis Pekerjaan:** {spk_data_selected['jenis_pekerjaan']}
+* **Unit/Wilayah:** {spk_data_selected['unit']}
+* **Lokasi:** {spk_data_selected.get('lokasi', '-')}
+* **Jumlah:** {spk_data_selected['jumlah']}
+* **Nilai Kontrak:** {nilai_formatted}
 """)
 
         prog_terakhir = 0.0
