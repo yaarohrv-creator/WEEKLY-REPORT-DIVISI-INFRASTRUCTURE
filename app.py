@@ -565,7 +565,9 @@ elif menu == MENU_INPUT:
         except (ValueError, TypeError):
             nilai_formatted = "-"
 
-        st.info(f"""📌 **Detail SPK Dipilih:** 
+        st.markdown(f"""
+📌 **Detail SPK Dipilih:**
+
 * **Nomor SPK:** {selected_row['no_spk']}
 * **Kontraktor:** {selected_row['kontraktor']}
 * **Jenis Pekerjaan:** {selected_row['jenis_pekerjaan']}
