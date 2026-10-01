@@ -305,35 +305,35 @@ if menu == MENU_DASHBOARD:
     st.title("📊 WEEKLY REPORT DIVISI INFRASTRUCTURE")
 
     tab_bangka, tab_belitung, tab_semua, tab_history = st.tabs([
-        "🏝️️ Laporan Progress Bangka", 
+        "🏝️ Laporan Progress Bangka", 
         "🏖️ Laporan Progress Belitung", 
         "📋 Semua Progress Proyek", 
         "📜 Riwayat / History Update"
     ])
 
-    # 1. Query gabungan antara Master SPK dan Laporan Mingguan
+    # Query LEFT JOIN dari master_spk ke laporan_mingguan agar data selalu sinkron
     query_view = """
         SELECT 
             l.id AS real_id,
-            m.no_spk AS no_spk,
-            m.kontraktor AS kontraktor,
-            m.nilai_spk_utama AS nilai_spk_utama,
-            m.unit AS unit,
-            m.lokasi AS lokasi,
-            m.jenis_pekerjaan AS jenis_pekerjaan,
-            CAST(COALESCE(m.jumlah, 1) AS INTEGER) AS jumlah,
-            m.nilai_pekerjaan AS nilai_pekerjaan,
-            COALESCE(l.progress_minggu_lalu, 0) AS progress_minggu_lalu,
-            COALESCE(l.progress_minggu_ini, 0) AS progress_minggu_ini,
-            (COALESCE(l.progress_minggu_ini, 0) - COALESCE(l.progress_minggu_lalu, 0)) AS selisih_varian,
-            l.catatan AS catatan,
-            l.foto_1 AS foto_1,
-            l.foto_2 AS foto_2
+            l.waktu_input AS "Waktu Input Terbaru",
+            m.no_spk AS "Nomor SPK",
+            m.kontraktor AS "Nama Kontraktor",
+            m.jenis_pekerjaan AS "Jenis Pekerjaan",
+            m.unit AS "Unit Proyek",
+            m.lokasi AS "Lokasi",
+            CAST(COALESCE(m.jumlah, 1) AS INTEGER) AS "Jumlah",
+            m.nilai_pekerjaan AS "Nilai Kontrak Pekerjaan Ini (Rp)",
+            COALESCE(l.progress_minggu_lalu, 0) AS "Progress Minggu Lalu (%)",
+            COALESCE(l.progress_minggu_ini, 0) AS "Progress Minggu Ini (%)",
+            (COALESCE(l.progress_minggu_ini, 0) - COALESCE(l.progress_minggu_lalu, 0)) AS "Selisih / Varian (%)",
+            l.catatan AS "Catatan Pekerjaan Terbaru",
+            l.foto_1 AS "Pratinjau Foto 1",
+            l.foto_2 AS "Pratinjau Foto 2"
         FROM master_spk m
         LEFT JOIN laporan_mingguan l 
             ON TRIM(LOWER(m.no_spk)) = TRIM(LOWER(l.no_spk)) 
            AND TRIM(LOWER(m.jenis_pekerjaan)) = TRIM(LOWER(l.jenis_pekerjaan))
-        ORDER BY m.no_spk ASC, m.id ASC
+        ORDER BY m.id ASC
     """
 
     with get_db_connection() as conn:
@@ -343,87 +343,36 @@ if menu == MENU_DASHBOARD:
             st.error(f"Error membaca data dashboard: {e}")
             df_all = pd.DataFrame()
 
-    # 2. Fungsi Pemformat Grouped Excel khusus Dashboard Progress
-    def format_grouped_dashboard_df(df_input):
-        if df_input.empty:
-            return pd.DataFrame()
+    def render_dashboard_table(df_data, tab_key_prefix):
+        column_order = [
+            'No', 'Nomor SPK', 'Nama Kontraktor', 'Jenis Pekerjaan', 'Unit Proyek', 'Lokasi', 'Jumlah',
+            'Nilai Kontrak Pekerjaan Ini (Rp)', 'Progress Minggu Lalu (%)', 'Progress Minggu Ini (%)',
+            'Selisih / Varian (%)', 'Catatan Pekerjaan Terbaru', 'Pratinjau Foto 1', 'Pratinjau Foto 2'
+        ]
 
-        df_sorted = df_input.sort_values(by=['no_spk', 'real_id']).reset_index(drop=True)
-        df_formatted = pd.DataFrame()
-        
-        df_formatted['real_id'] = df_sorted['real_id']
-        
-        nomor_spk_list = []
-        kontraktor_list = []
-        nilai_spk_list = []
-        unit_list = []
-        lokasi_list = []
-
-        last_spk = None
-
-        for _, row in df_sorted.iterrows():
-            current_spk = row['no_spk']
-            if current_spk != last_spk:
-                nomor_spk_list.append(current_spk)
-                kontraktor_list.append(row['kontraktor'])
-                nilai_spk_list.append(row['nilai_spk_utama'])
-                unit_list.append(row['unit'])
-                lokasi_list.append(row['lokasi'])
-                last_spk = current_spk
-            else:
-                nomor_spk_list.append("")
-                kontraktor_list.append("")
-                nilai_spk_list.append(None)
-                unit_list.append("")
-                lokasi_list.append("")
-
-        df_formatted['Nomor SPK'] = nomor_spk_list
-        df_formatted['Kontraktor'] = kontraktor_list
-        df_formatted['Nilai SPK Utama (Rp)'] = nilai_spk_list
-        df_formatted['Unit / Wilayah'] = unit_list
-        df_formatted['Lokasi'] = lokasi_list
-        df_formatted['Jenis Pekerjaan'] = df_sorted['jenis_pekerjaan']
-        df_formatted['Jumlah'] = df_sorted['jumlah']
-        df_formatted['Nilai Pekerjaan (Rp)'] = df_sorted['nilai_pekerjaan']
-        df_formatted['Progress Minggu Lalu (%)'] = df_sorted['progress_minggu_lalu']
-        df_formatted['Progress Minggu Ini (%)'] = df_sorted['progress_minggu_ini']
-        df_formatted['Selisih / Varian (%)'] = df_sorted['selisih_varian']
-        df_formatted['Catatan Pekerjaan Terbaru'] = df_sorted['catatan']
-        df_formatted['Pratinjau Foto 1'] = df_sorted['foto_1']
-        df_formatted['Pratinjau Foto 2'] = df_sorted['foto_2']
-
-        return df_formatted
-
-    # 3. Render tabel dengan format Grouped Excel
-    def render_dashboard_table(df_raw, tab_key_prefix):
-        if df_raw.empty:
+        if df_data.empty:
             st.info("💡 Belum ada data progress untuk wilayah/kategori ini.")
             return
+        else:
+            df_display = df_data.copy().reset_index(drop=True)
+            if 'No' not in df_display.columns:
+                df_display.insert(0, 'No', range(1, len(df_display) + 1))
 
-        df_display = format_grouped_dashboard_df(df_raw)
-
-        st.caption("💡 **Tampilan Grouped Excel**: Nilai SPK Utama & Kontraktor hanya muncul di baris pertama tiap SPK. Nilai SPK Utama terhitung otomatis dari total Rincian Pekerjaan.")
+        existing_cols = [c for c in ['real_id'] + column_order if c in df_display.columns]
 
         editor_key = f"editor_{tab_key_prefix}"
         edited_df = st.data_editor(
-            df_display,
+            df_display[existing_cols],
             num_rows="dynamic",
             use_container_width=True,
             hide_index=True,
             column_config={
                 "real_id": None,
-                "Nomor SPK": st.column_config.TextColumn("Nomor SPK", disabled=True),
-                "Kontraktor": st.column_config.TextColumn("Kontraktor", disabled=True),
-                "Nilai SPK Utama (Rp)": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %'d", disabled=True),
-                "Unit / Wilayah": st.column_config.TextColumn("Unit / Wilayah", disabled=True),
-                "Lokasi": st.column_config.TextColumn("Lokasi", disabled=True),
-                "Jenis Pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan", disabled=True),
-                "Jumlah": st.column_config.NumberColumn("Jumlah", format="%d", disabled=True),
-                "Nilai Pekerjaan (Rp)": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %'d", disabled=True),
-                "Progress Minggu Lalu (%)": st.column_config.NumberColumn("Progress Minggu Lalu (%)", format="%.2f %%", disabled=True),
+                "Jumlah": st.column_config.NumberColumn("Jumlah", format="%d"),
+                "Nilai Kontrak Pekerjaan Ini (Rp)": st.column_config.NumberColumn("Nilai Kontrak (Rp)", format="Rp %d"),
+                "Progress Minggu Lalu (%)": st.column_config.NumberColumn("Progress Minggu Lalu (%)", format="%.2f %%"),
                 "Progress Minggu Ini (%)": st.column_config.NumberColumn("Progress Minggu Ini (%)", format="%.2f %%"),
-                "Selisih / Varian (%)": st.column_config.NumberColumn("Selisih / Varian (%)", format="%.2f %%", disabled=True),
-                "Catatan Pekerjaan Terbaru": st.column_config.TextColumn("Catatan Pekerjaan Terbaru"),
+                "Selisih / Varian (%)": st.column_config.NumberColumn("Selisih / Varian (%)", format="%.2f %%"),
                 "Pratinjau Foto 1": st.column_config.ImageColumn("Pratinjau Foto 1"),
                 "Pratinjau Foto 2": st.column_config.ImageColumn("Pratinjau Foto 2"),
             },
@@ -434,13 +383,14 @@ if menu == MENU_DASHBOARD:
             with get_db_connection() as conn:
                 cursor = conn.cursor()
                 for idx, row in edited_df.iterrows():
-                    real_id = row.get('real_id')
-                    if pd.notna(real_id) and str(real_id).strip() != "":
-                        cursor.execute("""
-                            UPDATE laporan_mingguan
-                            SET progress_minggu_ini = %s, catatan = %s
-                            WHERE id = %s
-                        """, (row.get('Progress Minggu Ini (%)'), row.get('Catatan Pekerjaan Terbaru'), int(real_id)))
+                    if idx < len(df_display):
+                        real_id = df_display.iloc[idx].get('real_id')
+                        if pd.notna(real_id):
+                            cursor.execute("""
+                                UPDATE laporan_mingguan
+                                SET progress_minggu_ini = %s, catatan = %s
+                                WHERE id = %s
+                            """, (row.get('Progress Minggu Ini (%)'), row.get('Catatan Pekerjaan Terbaru'), int(real_id)))
                 conn.commit()
 
             st.success("✅ Perubahan data berhasil disimpan!")
@@ -464,7 +414,7 @@ if menu == MENU_DASHBOARD:
     with tab_bangka:
         st.subheader("📍 Laporan Progress Proyek - Wilayah Bangka")
         if not df_all.empty:
-            df_bangka = df_all[df_all['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)]
+            df_bangka = df_all[df_all['Unit Proyek'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)]
             render_dashboard_table(df_bangka, "bangka")
 
     # --- TAB BELITUNG ---
@@ -473,8 +423,8 @@ if menu == MENU_DASHBOARD:
         if not df_all.empty:
             pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
             df_belitung = df_all[
-                df_all['unit'].astype(str).str.contains(pola_belitung, case=False, na=False) |
-                (~df_all['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
+                df_all['Unit Proyek'].astype(str).str.contains(pola_belitung, case=False, na=False) |
+                (~df_all['Unit Proyek'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
             ]
             render_dashboard_table(df_belitung, "belitung")
 
@@ -482,6 +432,7 @@ if menu == MENU_DASHBOARD:
     with tab_semua:
         st.subheader("🌐 Semua Laporan Progress Proyek")
         render_dashboard_table(df_all, "semua")
+
     # --- TAB RIWAYAT ---
     with tab_history:
         st.subheader("📜 Log Riwayat Update")
