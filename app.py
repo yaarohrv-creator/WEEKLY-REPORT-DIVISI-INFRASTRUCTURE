@@ -86,7 +86,7 @@ def init_db():
                     );
                 ''')
 
-                # AUTO MIGRATION: Pastikan kolom lokasi & nilai_spk_utama ada
+                # AUTO MIGRATION
                 cursor.execute('''
                     ALTER TABLE master_spk 
                     ADD COLUMN IF NOT EXISTS nilai_spk_utama REAL DEFAULT 0;
@@ -137,6 +137,28 @@ def init_db():
         st.error(f"⚠️ Gagal inisialisasi database: {e}")
 
 init_db()
+
+# ==========================================
+# FUNGSI REKALKULASI TOTAL NILAI SPK UTAMA
+# ==========================================
+def recalculate_spk_utama_totals(conn):
+    cursor = conn.cursor()
+    query_calc = """
+        SELECT no_spk, SUM(jumlah * nilai_pekerjaan) as total_spk
+        FROM master_spk
+        WHERE no_spk IS NOT NULL AND no_spk != ''
+        GROUP BY no_spk
+    """
+    cursor.execute(query_calc)
+    totals = cursor.fetchall()
+
+    for no_spk, total_nilai in totals:
+        cursor.execute("""
+            UPDATE master_spk
+            SET nilai_spk_utama = %s
+            WHERE no_spk = %s
+        """, (total_nilai, no_spk))
+    conn.commit()
 
 # ==========================================
 # FUNGSI EXPORT EXCEL
@@ -305,13 +327,12 @@ if menu == MENU_DASHBOARD:
     st.title("📊 WEEKLY REPORT DIVISI INFRASTRUCTURE")
 
     tab_bangka, tab_belitung, tab_semua, tab_history = st.tabs([
-        "🏝️️ Laporan Progress Bangka", 
+        "🏝 Laporan Progress Bangka", 
         "🏖️ Laporan Progress Belitung", 
         "📋 Semua Progress Proyek", 
         "📜 Riwayat / History Update"
     ])
 
-    # 1. Query gabungan antara Master SPK dan Laporan Mingguan
     query_view = """
         SELECT 
             l.id AS real_id,
@@ -343,7 +364,6 @@ if menu == MENU_DASHBOARD:
             st.error(f"Error membaca data dashboard: {e}")
             df_all = pd.DataFrame()
 
-    # 2. Fungsi Pemformat Grouped Excel khusus Dashboard Progress
     def format_grouped_dashboard_df(df_input):
         if df_input.empty:
             return pd.DataFrame()
@@ -394,7 +414,6 @@ if menu == MENU_DASHBOARD:
 
         return df_formatted
 
-    # 3. Render tabel dengan format Grouped Excel
     def render_dashboard_table(df_raw, tab_key_prefix):
         if df_raw.empty:
             st.info("💡 Belum ada data progress untuk wilayah/kategori ini.")
@@ -402,7 +421,7 @@ if menu == MENU_DASHBOARD:
 
         df_display = format_grouped_dashboard_df(df_raw)
 
-        st.caption("💡 **Tampilan Grouped Excel**: Nilai SPK Utama & Kontraktor hanya muncul di baris pertama tiap SPK. Nilai SPK Utama terhitung otomatis dari total Rincian Pekerjaan.")
+        st.caption("💡 **Tampilan Grouped Excel**: Nilai SPK Utama & Kontraktor hanya muncul di baris pertama tiap SPK.")
 
         editor_key = f"editor_{tab_key_prefix}"
         edited_df = st.data_editor(
@@ -482,6 +501,7 @@ if menu == MENU_DASHBOARD:
     with tab_semua:
         st.subheader("🌐 Semua Laporan Progress Proyek")
         render_dashboard_table(df_all, "semua")
+
     # --- TAB RIWAYAT ---
     with tab_history:
         st.subheader("📜 Log Riwayat Update")
@@ -509,7 +529,7 @@ if menu == MENU_DASHBOARD:
                     df_history['id'].tolist(),
                     key="select_history_id_del"
                 )
-                if st.button("🗑️ Hapus ID Dipilih", type="secondary", key="btn_del_single_hist"):
+                if st.button("🗑️️ Hapus ID Dipilih", type="secondary", key="btn_del_single_hist"):
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
                         cursor.execute("DELETE FROM history_progress WHERE id = %s", (id_pilihan,))
@@ -656,19 +676,26 @@ elif menu == MENU_INPUT:
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
                         cursor.execute("DELETE FROM laporan_mingguan WHERE TRIM(LOWER(no_spk))=%s AND TRIM(LOWER(jenis_pekerjaan))=%s", (no_spk_clean.lower(), jenis_clean.lower()))
+                        
                         cursor.execute("""
                             INSERT INTO laporan_mingguan (
                                 no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan, 
                                 progress_minggu_lalu, progress_minggu_ini, catatan, foto_1, foto_2, waktu_input
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)""", 
-                            (no_spk_clean, jenis_clean, kontraktor_clean, unit_clean, int(spk_data_selected['jumlah'] or 1), spk_data_selected['nilai_pekerjaan'], prog_terakhir, prog_ini, catatan_lap, path_f1_final, path_f2_final))
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                        """, (
+                            no_spk_clean, jenis_clean, kontraktor_clean, unit_clean, int(spk_data_selected['jumlah'] or 1), 
+                            spk_data_selected['nilai_pekerjaan'], prog_terakhir, prog_ini, catatan_lap, path_f1_final, path_f2_final
+                        ))
                         
                         cursor.execute("""
                             INSERT INTO history_progress (
                                 no_spk, jenis_pekerjaan, kontraktor, unit, 
                                 progress_minggu_lalu, progress_minggu_ini, progres_penambahan, catatan, foto_1, foto_2, waktu_input
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)""",
-                            (no_spk_clean, jenis_clean, kontraktor_clean, unit_clean, prog_terakhir, prog_ini, penambahan_week, catatan_lap, path_f1_final, path_f2_final))
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                        """, (
+                            no_spk_clean, jenis_clean, kontraktor_clean, unit_clean, prog_terakhir, prog_ini, 
+                            penambahan_week, catatan_lap, path_f1_final, path_f2_final
+                        ))
                         
                         conn.commit()
                     st.success(f"✅ Laporan progress untuk SPK {no_spk_clean} berhasil disimpan!")
@@ -699,25 +726,6 @@ elif menu == MENU_INPUT:
 # =========================================================
 elif menu == MENU_MASTER:
     st.title("⚙️ Kelola Master Data Pekerjaan / SPK")
-    
-    # Auto-check & buat kolom lokasi jika belum ada di database
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    DO $$ 
-                    BEGIN 
-                        IF NOT EXISTS (
-                            SELECT 1 FROM information_schema.columns 
-                            WHERE table_name='master_spk' AND column_name='lokasi'
-                        ) THEN 
-                            ALTER TABLE master_spk ADD COLUMN lokasi VARCHAR(255);
-                        END IF;
-                    END $$;
-                """)
-                conn.commit()
-    except Exception as e:
-        pass
 
     tab_m_bangka, tab_m_belitung, tab_m_semua, tab_tambah = st.tabs([
         "🌴 Master Bangka",
@@ -725,25 +733,6 @@ elif menu == MENU_MASTER:
         "📋 Semua Master SPK",
         "➕ Tambah SPK Baru"
     ])
-
-    def recalculate_spk_utama_totals(conn):
-        cursor = conn.cursor()
-        query_calc = """
-            SELECT no_spk, SUM(jumlah * nilai_pekerjaan) as total_spk
-            FROM master_spk
-            WHERE no_spk IS NOT NULL AND no_spk != ''
-            GROUP BY no_spk
-        """
-        cursor.execute(query_calc)
-        totals = cursor.fetchall()
-
-        for no_spk, total_nilai in totals:
-            cursor.execute("""
-                UPDATE master_spk
-                SET nilai_spk_utama = %s
-                WHERE no_spk = %s
-            """, (total_nilai, no_spk))
-        conn.commit()
 
     def format_grouped_excel_df(df_input):
         df_sorted = df_input.sort_values(by=['no_spk', 'id']).reset_index(drop=True)
@@ -839,7 +828,7 @@ elif menu == MENU_MASTER:
                             current_lokasi = str(row['Lokasi']).strip()
 
                         row_id = row.get('ID')
-                        if pd.notnull(row_id) and row_id != "":
+                        if pd.notnull(row_id) and str(row_id).strip() != "":
                             cursor.execute("""
                                 UPDATE master_spk 
                                 SET no_spk=%s, kontraktor=%s, jenis_pekerjaan=%s, unit=%s, 
@@ -884,7 +873,6 @@ elif menu == MENU_MASTER:
     with tab_tambah:
         st.subheader("📝 Form Tambah Data Master SPK")
 
-        # Inisialisasi session state untuk jumlah baris rincian pekerjaan
         if "num_items_spk" not in st.session_state:
             st.session_state["num_items_spk"] = 1
 
@@ -929,15 +917,13 @@ elif menu == MENU_MASTER:
                     "nilai_pekerjaan": np
                 })
 
-        # Tombol untuk menambah baris rincian pekerjaan baru secara dinamis
         st.button("➕ Tambah Baris Pekerjaan", on_click=add_item_row, key="btn_add_row_item")
 
         st.markdown("---")
 
-        # Tombol Eksekusi Simpan Semua Data
         if st.button("💾 Simpan Semua Data SPK & Pekerjaan", type="primary", key="btn_save_full_spk"):
             if not no_spk_input.strip():
-                st.error("⚠️ Nomor SPK wajib diisi!")
+                st.error("⚠️️ Nomor SPK wajib diisi!")
             elif not kontraktor_input.strip():
                 st.error("⚠️ Nama Kontraktor wajib diisi!")
             elif len(items_data) == 0:
@@ -947,7 +933,6 @@ elif menu == MENU_MASTER:
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
                         
-                        # Simpan setiap rincian pekerjaan ke database
                         for item in items_data:
                             cursor.execute("""
                                 INSERT INTO master_spk (
@@ -973,13 +958,10 @@ elif menu == MENU_MASTER:
                             ))
                         
                         conn.commit()
-                        
-                        # Hitung ulang akumulasi total Nilai SPK Utama secara otomatis
                         recalculate_spk_utama_totals(conn)
 
-                    # Reset baris formulir kembali ke 1 setelah berhasil disimpan
                     st.session_state["num_items_spk"] = 1
-                    st.success(f"✅ Data SPK {no_spk_input} beserta {len(items_data)} rincian pekerjaan berhasil disimpan!")
+                    st.success(f"✅ Data SPK {no_spk_input} berhasil disimpan!")
                     st.rerun()
 
                 except Exception as err:
