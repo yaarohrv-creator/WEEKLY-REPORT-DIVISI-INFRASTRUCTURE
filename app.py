@@ -644,7 +644,7 @@ elif menu == MENU_INPUT:
                     step=0.01,
                     format="%.2f"
                 )
-                catatan_lap = st.text_area("Catatan/Kendala Pekerjaan Minggu Ini", value=catatan_terakhir)
+                catatan_lap = st.text_area("Catatan Pekerjaan Terbaru", value=catatan_terakhir)
             
             with col2:
                 st.subheader("📷 Update Foto Dokumentasi (Upload Baru)")
