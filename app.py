@@ -834,20 +834,43 @@ elif menu == MENU_MASTER:
 
     with tab_tambah:
         st.subheader("➕ Tambah SPK Baru / Tambah Rincian Pekerjaan")
-        with st.form("form_tambah_spk"):
+        
+        # Ambil daftar SPK yang sudah ada untuk dropdown pilihan
+        list_spk_existing = ["-- BUAT SPK BARU --"] + sorted([s for s in df_master_all['no_spk'].dropna().unique().tolist() if s.strip() != ""])
+        
+        selected_option_spk = st.selectbox(
+            "Pilih SPK Yang Sudah Ada (Atau Pilih 'BUAT SPK BARU'):",
+            list_spk_existing,
+            key="select_spk_for_add"
+        )
+
+        with st.form("form_tambah_spk", clear_on_submit=True):
             col_a, col_b = st.columns(2)
+            
             with col_a:
-                no_spk_in = st.text_input("Nomor SPK:")
-                kontraktor_in = st.text_input("Nama Kontraktor:")
-                unit_in = st.selectbox("Unit / Wilayah:", ["BANGKA", "BELITUNG"])
-                lokasi_in = st.text_input("Lokasi (misal: BPRE, BPSL):")
+                if selected_option_spk == "-- BUAT SPK BARU --":
+                    no_spk_in = st.text_input("Nomor SPK Baru:")
+                    kontraktor_in = st.text_input("Nama Kontraktor:")
+                    unit_in = st.selectbox("Unit / Wilayah:", ["BANGKA", "BELITUNG"])
+                    lokasi_in = st.text_input("Lokasi (misal: BPRE, BPSL):")
+                else:
+                    # Otomatis mengambil data header dari SPK yang dipilih
+                    spk_info = df_master_all[df_master_all['no_spk'] == selected_option_spk].iloc[0]
+                    no_spk_in = selected_option_spk
+                    kontraktor_in = spk_info['kontraktor']
+                    unit_in = spk_info['unit']
+                    lokasi_in = spk_info.get('lokasi', '')
+                    
+                    st.info(f"📌 Menambahkan Rincian Pekerjaan ke **{no_spk_in}** ({kontraktor_in})")
+
             with col_b:
-                jenis_in = st.text_input("Jenis Pekerjaan:")
+                jenis_in = st.text_input("Jenis Pekerjaan Baru:")
                 jumlah_in = st.number_input("Jumlah:", min_value=1, value=1)
                 nilai_in = st.number_input("Nilai Pekerjaan (Rp):", min_value=0.0, step=100000.0)
                 catatan_in = st.text_area("Catatan:")
 
-            btn_submit_spk = st.form_submit_button("💾 Simpan SPK Baru")
+            btn_submit_spk = st.form_submit_button("💾 Simpan Data Pekerjaan")
+            
             if btn_submit_spk:
                 if not no_spk_in or not jenis_in:
                     st.error("⚠️ Nomor SPK dan Jenis Pekerjaan wajib diisi!")
@@ -858,10 +881,13 @@ elif menu == MENU_MASTER:
                             cursor.execute("""
                                 INSERT INTO master_spk (no_spk, kontraktor, jenis_pekerjaan, unit, lokasi, jumlah, nilai_pekerjaan, catatan)
                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                            """, (no_spk_in.strip(), kontraktor_in.strip(), jenis_in.strip(), unit_in, lokasi_in.strip(), jumlah_in, nilai_in, catatan_in))
+                            """, (no_spk_in.strip(), kontraktor_in.strip() if isinstance(kontraktor_in, str) else "", jenis_in.strip(), unit_in, lokasi_in.strip() if isinstance(lokasi_in, str) else "", jumlah_in, nilai_in, catatan_in))
                             conn.commit()
+                            
+                            # Akumulasi Ulang Nilai Total SPK Utama
                             recalculate_spk_utama_totals(conn)
-                        st.success("✅ SPK Baru berhasil ditambahkan!")
+                            
+                        st.success(f"✅ Jenis pekerjaan baru berhasil ditambahkan ke SPK {no_spk_in}!")
                         st.rerun()
                     except Exception as err:
-                        st.error(f"Gagal menambahkan SPK: {err}")
+                        st.error(f"Gagal menambahkan data: {err}")
