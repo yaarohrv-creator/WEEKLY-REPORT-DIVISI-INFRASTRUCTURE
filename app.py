@@ -309,15 +309,33 @@ if menu == MENU_DASHBOARD:
     st.title("📊 WEEKLY REPORT DIVISI INFRASTRUCTURE")
 
     tab_bangka, tab_belitung, tab_semua, tab_history = st.tabs([
-        "🏝️️ Laporan Progress Bangka", 
+        "🏝 Laporan Progress Bangka", 
         "🏖️ Laporan Progress Belitung", 
         "📋 Semua Progress Proyek", 
         "📜 Riwayat / History Update"
     ])
 
-    # 1. Query gabungan antara Master SPK dan Laporan Mingguan
+    # Query terdistribusi yang mengambil laporan mingguan TERBARU secara presisi
     query_view = """
+        WITH latest_laporan AS (
+            SELECT DISTINCT ON (REGEXP_REPLACE(LOWER(TRIM(no_spk)), '\s+', ' ', 'g'), REGEXP_REPLACE(LOWER(TRIM(jenis_pekerjaan)), '\s+', ' ', 'g'))
+                id,
+                no_spk,
+                jenis_pekerjaan,
+                progress_minggu_lalu,
+                progress_minggu_ini,
+                catatan,
+                foto_1,
+                foto_2,
+                waktu_input
+            FROM laporan_mingguan
+            ORDER BY 
+                REGEXP_REPLACE(LOWER(TRIM(no_spk)), '\s+', ' ', 'g'),
+                REGEXP_REPLACE(LOWER(TRIM(jenis_pekerjaan)), '\s+', ' ', 'g'),
+                id DESC
+        )
         SELECT 
+            m.id AS master_id,
             l.id AS real_id,
             m.no_spk AS no_spk,
             m.kontraktor AS kontraktor,
@@ -334,10 +352,10 @@ if menu == MENU_DASHBOARD:
             l.foto_1 AS foto_1,
             l.foto_2 AS foto_2
         FROM master_spk m
-        LEFT JOIN laporan_mingguan l 
-            ON TRIM(LOWER(m.no_spk)) = TRIM(LOWER(l.no_spk)) 
-           AND TRIM(LOWER(m.jenis_pekerjaan)) = TRIM(LOWER(l.jenis_pekerjaan))
-        ORDER BY m.no_spk ASC, m.id ASC
+        LEFT JOIN latest_laporan l 
+            ON REGEXP_REPLACE(LOWER(TRIM(m.no_spk)), '\s+', ' ', 'g') = REGEXP_REPLACE(LOWER(TRIM(l.no_spk)), '\s+', ' ', 'g')
+           AND REGEXP_REPLACE(LOWER(TRIM(m.jenis_pekerjaan)), '\s+', ' ', 'g') = REGEXP_REPLACE(LOWER(TRIM(l.jenis_pekerjaan)), '\s+', ' ', 'g')
+        ORDER BY m.id ASC
     """
 
     with get_db_connection() as conn:
@@ -346,7 +364,6 @@ if menu == MENU_DASHBOARD:
         except Exception as e:
             st.error(f"Error membaca data dashboard: {e}")
             df_all = pd.DataFrame()
-
     # 2. Fungsi Pemformat Grouped Excel khusus Dashboard Progress
     def format_grouped_dashboard_df(df_input):
         if df_input.empty:
