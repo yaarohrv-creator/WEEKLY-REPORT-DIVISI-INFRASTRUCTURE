@@ -677,29 +677,73 @@ elif menu == MENU_INPUT:
 
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
-                        # Hapus data laporan lama untuk SPK & Jenis Pekerjaan ini jika ada
-                        cursor.execute("DELETE FROM laporan_mingguan WHERE TRIM(LOWER(no_spk))=%s AND TRIM(LOWER(jenis_pekerjaan))=%s", (no_spk_clean.lower(), jenis_clean.lower()))
                         
-                        # INSERT Laporan Mingguan Baru
-                        cursor.execute("""
+                        # 1. Hapus laporan lama jika ada untuk SPK & Jenis Pekerjaan ini
+                        cursor.execute(
+                            "DELETE FROM laporan_mingguan WHERE TRIM(LOWER(no_spk))=%s AND TRIM(LOWER(jenis_pekerjaan))=%s", 
+                            (no_spk_clean.lower(), jenis_clean.lower())
+                        )
+                        
+                        # 2. INSERT Laporan Mingguan (Pastikan ada 11 buah %s sesuai 11 nilai variabel)
+                        sql_insert_laporan = """
                             INSERT INTO laporan_mingguan (
-                                no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan, 
-                                progress_minggu_lalu, progress_minggu_ini, catatan, foto_1, foto_2, waktu_input
+                                no_spk, 
+                                jenis_pekerjaan, 
+                                kontraktor, 
+                                unit, 
+                                jumlah, 
+                                nilai_pekerjaan, 
+                                progress_minggu_lalu, 
+                                progress_minggu_ini, 
+                                catatan, 
+                                foto_1, 
+                                foto_2, 
+                                waktu_input
                             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                        """, (
-                            no_spk_clean, jenis_clean, kontraktor_clean, unit_clean, int(spk_data_selected['jumlah'] or 1), 
-                            spk_data_selected['nilai_pekerjaan'], prog_terakhir, prog_ini, catatan_lap, path_f1_final, path_f2_final
+                        """
+                        
+                        cursor.execute(sql_insert_laporan, (
+                            no_spk_clean,
+                            jenis_clean,
+                            kontraktor_clean,
+                            unit_clean,
+                            int(spk_data_selected['jumlah'] or 1),
+                            float(spk_data_selected['nilai_pekerjaan'] or 0.0),
+                            prog_terakhir,
+                            prog_ini,
+                            catatan_lap,
+                            path_f1_final,
+                            path_f2_final
                         ))
                         
-                        # INSERT Log History Progress Baru
-                        cursor.execute("""
+                        # 3. INSERT History Progress (Pastikan ada 10 buah %s sesuai 10 nilai variabel)
+                        sql_insert_history = """
                             INSERT INTO history_progress (
-                                no_spk, jenis_pekerjaan, kontraktor, unit, 
-                                progress_minggu_lalu, progress_minggu_ini, progres_penambahan, catatan, foto_1, foto_2, waktu_input
+                                no_spk, 
+                                jenis_pekerjaan, 
+                                kontraktor, 
+                                unit, 
+                                progress_minggu_lalu, 
+                                progress_minggu_ini, 
+                                progres_penambahan, 
+                                catatan, 
+                                foto_1, 
+                                foto_2, 
+                                waktu_input
                             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                        """, (
-                            no_spk_clean, jenis_clean, kontraktor_clean, unit_clean, prog_terakhir, prog_ini, 
-                            penambahan_week, catatan_lap, path_f1_final, path_f2_final
+                        """
+                        
+                        cursor.execute(sql_insert_history, (
+                            no_spk_clean,
+                            jenis_clean,
+                            kontraktor_clean,
+                            unit_clean,
+                            prog_terakhir,
+                            prog_ini,
+                            penambahan_week,
+                            catatan_lap,
+                            path_f1_final,
+                            path_f2_final
                         ))
                         
                         conn.commit()
