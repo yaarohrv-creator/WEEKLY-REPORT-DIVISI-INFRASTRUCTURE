@@ -446,8 +446,11 @@ if menu == MENU_DASHBOARD:
         # Format Tanggal Update
         df_formatted['Tanggal Update'] = pd.to_datetime(df_sorted['tanggal_update'], errors='coerce').dt.date
         
-        df_formatted['Catatan Pekerjaan Terbaru'] = df_sorted['catatan'].fillna('')
+        df_formatted['Catatan Pekerjaan Terbaru'] = (
+        df_sorted['catatan']
+        .fillna('')
         .replace(['nan', 'None', 'NaN'], '')
+    )
         df_formatted['Pratinjau Foto 1'] = df_sorted['foto_1']
         df_formatted['Pratinjau Foto 2'] = df_sorted['foto_2']
 
