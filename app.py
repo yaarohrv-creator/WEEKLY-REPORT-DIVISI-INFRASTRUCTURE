@@ -463,12 +463,14 @@ if menu == MENU_DASHBOARD:
                 "real_id": None,
                 "Nomor SPK": st.column_config.TextColumn("Nomor SPK", disabled=True),
                 "Kontraktor": st.column_config.TextColumn("Kontraktor", disabled=True),
-                "Nilai SPK Utama (Rp)": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %'d", disabled=True),
+                # FORMAT RUPIAH DENGAN DESIMAL DI STREAMLIT
+                "Nilai SPK Utama (Rp)": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %',.2f", disabled=True),
                 "Unit / Wilayah": st.column_config.TextColumn("Unit / Wilayah", disabled=True),
                 "Lokasi": st.column_config.TextColumn("Lokasi", disabled=True),
                 "Jenis Pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan", disabled=True),
                 "Jumlah": st.column_config.NumberColumn("Jumlah", format="%d", disabled=True),
-                "Nilai Pekerjaan (Rp)": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %'d", disabled=True),
+                # FORMAT RUPIAH DENGAN DESIMAL PADA NILAI PEKERJAAN
+                "Nilai Pekerjaan (Rp)": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %',.2f", disabled=True),
                 "Progress Minggu Lalu (%)": st.column_config.NumberColumn("Progress Minggu Lalu (%)", format="%.2f %%", disabled=True),
                 "Progress Minggu Ini (%)": st.column_config.NumberColumn("Progress Minggu Ini (%)", format="%.2f %%"),
                 "Selisih / Varian (%)": st.column_config.NumberColumn("Selisih / Varian (%)", format="%.2f %%", disabled=True),
