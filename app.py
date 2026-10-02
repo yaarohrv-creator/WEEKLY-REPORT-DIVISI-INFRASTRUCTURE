@@ -805,166 +805,85 @@ elif menu == MENU_INPUT:
 # =========================================================
 elif menu == MENU_MASTER:
     st.title("⚙️ Kelola Master Data Pekerjaan / SPK")
-    
-    # Auto-check & buat kolom lokasi jika belum ada di database
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    DO $$ 
-                    BEGIN 
-                        IF NOT EXISTS (
-                            SELECT 1 FROM information_schema.columns 
-                            WHERE table_name='master_spk' AND column_name='lokasi'
-                        ) THEN 
-                            ALTER TABLE master_spk ADD COLUMN lokasi VARCHAR(255);
-                        END IF;
-                    END $$;
-                """)
-                conn.commit()
-    except Exception as e:
-        pass
+    st.markdown("---")
 
-    tab_m_bangka, tab_m_belitung, tab_m_semua, tab_tambah = st.tabs([
-        "🌴 Master Bangka",
-        "⛵ Master Belitung",
-        "📋 Semua Master SPK",
+    tab_m_bangka, tab_m_belitung, tab_m_semua, tab_m_tambah = st.tabs([
+        "🌴 Master Bangka", 
+        "⛵ Master Belitung", 
+        "📋 Semua Master SPK", 
         "➕ Tambah SPK Baru"
     ])
 
-    def recalculate_spk_utama_totals(conn):
-        cursor = conn.cursor()
-        query_calc = """
-            SELECT no_spk, SUM(jumlah * nilai_pekerjaan) as total_spk
-            FROM master_spk
-            WHERE no_spk IS NOT NULL AND no_spk != ''
-            GROUP BY no_spk
-        """
-        cursor.execute(query_calc)
-        totals = cursor.fetchall()
+    # Fetch seluruh data master dari database (sertakan ID untuk update)
+    with get_db_connection() as conn:
+        try:
+            df_m_all = pd.read_sql_query("SELECT id, no_spk, kontraktor, nilai_spk_utama, unit, lokasi, jenis_pekerjaan, jumlah, nilai_pekerjaan, catatan FROM master_spk ORDER BY lokasi ASC, no_spk ASC, id ASC", conn)
+        except Exception as e:
+            st.error(f"Error membaca master data: {e}")
+            df_m_all = pd.DataFrame()
 
-        for no_spk, total_nilai in totals:
-            cursor.execute("""
-                UPDATE master_spk
-                SET nilai_spk_utama = %s
-                WHERE no_spk = %s
-            """, (total_nilai, no_spk))
-        conn.commit()
-
-    def format_grouped_excel_df(df_input):
-        df_sorted = df_input.sort_values(by=['no_spk', 'id']).reset_index(drop=True)
-        df_formatted = pd.DataFrame()
-        df_formatted['ID'] = df_sorted['id']
-        
-        nomor_spk_list = []
-        kontraktor_list = []
-        nilai_spk_list = []
-        unit_list = []
-        lokasi_list = []
-
-        last_spk = None
-
-        for _, row in df_sorted.iterrows():
-            current_spk = row['no_spk']
-            if current_spk != last_spk:
-                nomor_spk_list.append(current_spk)
-                kontraktor_list.append(row['kontraktor'])
-                nilai_spk_list.append(row['nilai_spk_utama'])
-                unit_list.append(row['unit'])
-                lokasi_list.append(row.get('lokasi', ''))
-                last_spk = current_spk
-            else:
-                nomor_spk_list.append("")
-                kontraktor_list.append("")
-                nilai_spk_list.append(None)
-                unit_list.append("")
-                lokasi_list.append("")
-
-        df_formatted['Nomor SPK'] = nomor_spk_list
-        df_formatted['Kontraktor'] = kontraktor_list
-        df_formatted['Nilai SPK Utama (Rp)'] = nilai_spk_list
-        df_formatted['Unit / Wilayah'] = unit_list
-        df_formatted['Lokasi'] = lokasi_list
-        df_formatted['Jenis Pekerjaan'] = df_sorted['jenis_pekerjaan']
-        df_formatted['Jumlah'] = df_sorted['jumlah']
-        df_formatted['Nilai Pekerjaan (Rp)'] = df_sorted['nilai_pekerjaan']
-        df_formatted['Catatan'] = df_sorted['catatan']
-
-        return df_formatted
-
-    def render_grouped_master_table(df_raw, key_prefix="master"):
+    def render_editable_master_table(df_raw, tab_prefix):
         if df_raw.empty:
-            st.info("Belum ada data master SPK.")
+            st.info("💡 Belum ada data Master SPK pada kategori ini.")
             return
 
-        df_display = format_grouped_excel_df(df_raw)
+        st.caption("💡 **Edit Langsung**: Anda dapat mengubah isi tabel di bawah ini secara langsung, lalu klik tombol **💾 Simpan Perubahan Master Data** di bawah tabel.")
 
-        st.caption("💡 **Tampilan Grouped Excel**: Nilai SPK Utama & Kontraktor hanya muncul di baris pertama tiap SPK. Nilai SPK Utama terhitung otomatis dari total Rincian Pekerjaan.")
-
-        edited_df = st.data_editor(
-            df_display,
-            column_config={
-                "ID": None,
-                "Nomor SPK": st.column_config.TextColumn("Nomor SPK", width="medium"),
-                "Kontraktor": st.column_config.TextColumn("Kontraktor", width="medium"),
-                "Nilai SPK Utama (Rp)": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %'d", disabled=True),
-                "Unit / Wilayah": st.column_config.TextColumn("Unit / Wilayah", width="small"),
-                "Lokasi": st.column_config.TextColumn("Lokasi", width="small"),
-                "Jenis Pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan", width="large", required=True),
-                "Jumlah": st.column_config.NumberColumn("Jumlah", min_value=1, step=1, required=True),
-                "Nilai Pekerjaan (Rp)": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %'d", required=True),
-                "Catatan": st.column_config.TextColumn("Catatan", width="medium")
-            },
-            use_container_width=True,
+        # Tampilkan tabel yang dapat diedit (st.data_editor)
+        edited_master_df = st.data_editor(
+            df_raw,
             num_rows="dynamic",
-            key=f"editor_{key_prefix}"
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "id": None, # Sembunyikan ID utama
+                "no_spk": st.column_config.TextColumn("Nomor SPK", required=True),
+                "kontraktor": st.column_config.TextColumn("Kontraktor"),
+                "nilai_spk_utama": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %',.2f", disabled=True),
+                "unit": st.column_config.TextColumn("Unit / Wilayah", required=True),
+                "lokasi": st.column_config.TextColumn("Lokasi"),
+                "jenis_pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan", required=True),
+                "jumlah": st.column_config.NumberColumn("Jumlah", format="%d", step=1, min_value=1),
+                "nilai_pekerjaan": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %',.2f", step=100000.0),
+                "catatan": st.column_config.TextColumn("Catatan"),
+            },
+            key=f"editor_master_{tab_prefix}"
         )
 
-        if st.button("💾 Simpan Perubahan Master Data", key=f"btn_save_{key_prefix}"):
-            try:
-                with get_db_connection() as conn:
-                    cursor = conn.cursor()
+        # Tombol Simpan Perubahan Master Data
+        if st.button("💾 Simpan Perubahan Master Data", key=f"btn_save_m_{tab_prefix}"):
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                for idx, row in edited_master_df.iterrows():
+                    master_id = row.get('id')
+                    if pd.notna(master_id) and str(master_id).strip() != "":
+                        # Update data di tabel master_spk
+                        cursor.execute("""
+                            UPDATE master_spk
+                            SET no_spk = %s,
+                                kontraktor = %s,
+                                unit = %s,
+                                lokasi = %s,
+                                jenis_pekerjaan = %s,
+                                jumlah = %s,
+                                nilai_pekerjaan = %s,
+                                catatan = %s
+                            WHERE id = %s
+                        """, (
+                            str(row.get('no_spk') or '').strip(),
+                            str(row.get('kontraktor') or '').strip(),
+                            str(row.get('unit') or '').strip(),
+                            str(row.get('lokasi') or '').strip(),
+                            str(row.get('jenis_pekerjaan') or '').strip(),
+                            int(row.get('jumlah') or 1),
+                            float(row.get('nilai_pekerjaan') or 0.0),
+                            str(row.get('catatan') or '').strip(),
+                            int(master_id)
+                        ))
+                conn.commit()
 
-                    original_ids = set(df_raw['id'].dropna().astype(int).tolist())
-                    remaining_ids = set(edited_df['ID'].dropna().astype(int).tolist()) if 'ID' in edited_df.columns else set()
-                    ids_to_delete = list(original_ids - remaining_ids)
-
-                    if ids_to_delete:
-                        cursor.execute("DELETE FROM master_spk WHERE id = ANY(%s)", (ids_to_delete,))
-
-                    current_spk = ""
-                    current_kontraktor = ""
-                    current_unit = ""
-                    current_lokasi = ""
-
-                    for idx, row in edited_df.iterrows():
-                        if str(row.get('Nomor SPK', '')).strip() != "":
-                            current_spk = str(row['Nomor SPK']).strip()
-                            current_kontraktor = str(row['Kontraktor']).strip()
-                            current_unit = str(row['Unit / Wilayah']).strip()
-                            current_lokasi = str(row['Lokasi']).strip()
-
-                        row_id = row.get('ID')
-                        if pd.notnull(row_id) and row_id != "":
-                            cursor.execute("""
-                                UPDATE master_spk 
-                                SET no_spk=%s, kontraktor=%s, jenis_pekerjaan=%s, unit=%s, 
-                                    lokasi=%s, jumlah=%s, nilai_pekerjaan=%s, catatan=%s
-                                WHERE id=%s
-                            """, (
-                                current_spk, current_kontraktor, row['Jenis Pekerjaan'], 
-                                current_unit, current_lokasi, row['Jumlah'], 
-                                row['Nilai Pekerjaan (Rp)'], row.get('Catatan', ''),
-                                int(row_id)
-                            ))
-
-                    conn.commit()
-                    recalculate_spk_utama_totals(conn)
-
-                st.success("✅ Perubahan Master Data berhasil disimpan!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"⚠️ Gagal memperbarui data: {e}")
+            st.success("✅ Perubahan Master Data berhasil disimpan!")
+            st.rerun()
 
     with get_db_connection() as conn:
         df_master_all = pd.read_sql_query("SELECT * FROM master_spk ORDER BY id ASC", conn)
