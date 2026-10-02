@@ -315,7 +315,7 @@ if menu == MENU_DASHBOARD:
         "📜 Riwayat / History Update"
     ])
 
-    # Query terdistribusi yang mengambil laporan mingguan TERBARU secara presisi
+    # Query terdistribusi dengan urutan berdasarkan LOKASI dan NOMOR SPK
     query_view = """
         WITH spk_totals AS (
             -- Calculate aggregate Total Nilai SPK Utama per No SPK dynamically
@@ -371,7 +371,10 @@ if menu == MENU_DASHBOARD:
         LEFT JOIN latest_laporan l 
             ON REGEXP_REPLACE(LOWER(TRIM(m.no_spk)), '\\s+', ' ', 'g') = l.clean_no_spk
            AND REGEXP_REPLACE(LOWER(TRIM(m.jenis_pekerjaan)), '\\s+', ' ', 'g') = l.clean_jenis_pekerjaan
-        ORDER BY m.id ASC
+        ORDER BY 
+            m.lokasi ASC,
+            m.no_spk ASC,
+            m.id ASC
     """
 
     with get_db_connection() as conn:
