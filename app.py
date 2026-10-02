@@ -495,30 +495,77 @@ if menu == MENU_DASHBOARD:
             key=editor_key
         )
 
-        if st.button("💾 Simpan Perubahan Data", key=f"btn_save_{tab_key_prefix}"):
-            with get_db_connection() as conn:
-                cursor = conn.cursor()
-                for idx, row in edited_df.iterrows():
-                    real_id = row.get('real_id')
-                    tgl_val = row.get('Tanggal Update')
+        if st.button("💾 Simpan Perubahan Data", key=f"btn_save_{tab_key_prefix}", type="primary"):
+            try:
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
                     
-                    if pd.notna(real_id) and str(real_id).strip() != "":
-                        cursor.execute("""
-                            UPDATE laporan_mingguan
-                            SET progress_minggu_ini = %s,
-                                tanggal = %s,
-                                catatan = %s
-                            WHERE id = %s
-                        """, (
-                            row.get('Progress Minggu Ini (%)'),
-                            tgl_val,
-                            row.get('Catatan Pekerjaan Terbaru'),
-                            int(real_id)
-                        ))
-                conn.commit()
+                    # Variabel penampung header SPK untuk mengisi baris baru (forward-fill)
+                    current_spk = ""
+                    current_kontraktor = ""
+                    current_unit = ""
+                    current_lokasi = ""
 
-            st.success("✅ Perubahan data dan tanggal berhasil disimpan!")
-            st.rerun()
+                    for idx, row in edited_df.iterrows():
+                        if str(row.get('Nomor SPK', '') or '').strip() != "":
+                            current_spk = str(row['Nomor SPK']).strip()
+                        if str(row.get('Kontraktor', '') or '').strip() != "":
+                            current_kontraktor = str(row['Kontraktor']).strip()
+                        if str(row.get('Unit / Wilayah', '') or '').strip() != "":
+                            current_unit = str(row['Unit / Wilayah']).strip()
+                        if str(row.get('Lokasi', '') or '').strip() != "":
+                            current_lokasi = str(row['Lokasi']).strip()
+
+                        real_id = row.get('real_id')
+                        prog_lalu = float(row.get('Progress Minggu Lalu (%)', 0.0) or 0.0)
+                        prog_ini = float(row.get('Progress Minggu Ini (%)', 0.0) or 0.0)
+                        tgl_val = row.get('Tanggal Update')
+                        tgl_str = tgl_val.strftime('%Y-%m-%d') if pd.notnull(tgl_val) and str(tgl_val).strip() != "" else None
+                        catatan_val = str(row.get('Catatan Pekerjaan Terbaru', '') or '').strip()
+                        jenis_pekerjaan = str(row.get('Jenis Pekerjaan', '') or '').strip()
+
+                        # Jika data laporan sudah ada sebelumnya (UPDATE)
+                        if pd.notna(real_id) and str(real_id).strip() != "":
+                            cursor.execute("""
+                                UPDATE laporan_mingguan
+                                SET progress_minggu_lalu = %s,
+                                    progress_minggu_ini = %s,
+                                    tanggal = %s,
+                                    catatan = %s
+                                WHERE id = %s
+                            """, (
+                                prog_lalu,
+                                prog_ini,
+                                tgl_str,
+                                catatan_val,
+                                int(real_id)
+                            ))
+                        # Jika baris laporan belum pernah diinput di database (INSERT baris baru)
+                        elif jenis_pekerjaan != "":
+                            cursor.execute("""
+                                INSERT INTO laporan_mingguan (
+                                    no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan,
+                                    progress_minggu_lalu, progress_minggu_ini, tanggal, catatan
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """, (
+                                current_spk,
+                                jenis_pekerjaan,
+                                current_kontraktor,
+                                current_unit,
+                                int(row.get('Jumlah', 1) or 1),
+                                float(row.get('Nilai Pekerjaan (Rp)', 0.0) or 0.0),
+                                prog_lalu,
+                                prog_ini,
+                                tgl_str,
+                                catatan_val
+                            ))
+
+                    conn.commit()
+
+                st.success("✅ Perubahan progress minggu lalu, minggu ini, dan tanggal berhasil disimpan!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"⚠️ Gagal menyimpan perubahan: {e}")
 
         st.markdown("---")
         st.subheader("📥 Export & Download Laporan")
