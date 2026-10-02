@@ -620,6 +620,7 @@ elif menu == MENU_INPUT:
 
         try:
             val_num = float(spk_data_selected['nilai_pekerjaan'])
+            # Formatting ke Rupiah dengan 2 angka desimal
             nilai_formatted = f"Rp {val_num:,.2f}"
         except (ValueError, TypeError):
             nilai_formatted = "-"
