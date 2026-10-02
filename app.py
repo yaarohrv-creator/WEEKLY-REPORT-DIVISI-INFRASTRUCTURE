@@ -718,7 +718,8 @@ elif menu == MENU_INPUT:
         with get_db_connection() as conn:
             query_last = "SELECT progress_minggu_ini, catatan, foto_1, foto_2 FROM laporan_mingguan WHERE TRIM(LOWER(no_spk))=%s AND TRIM(LOWER(jenis_pekerjaan))=%s"
             existing_prog_df = pd.read_sql_query(query_last, conn, params=(str(spk_data_selected['no_spk']).strip().lower(), str(spk_data_selected['jenis_pekerjaan']).strip().lower()))
-         if not existing_prog_df.empty:
+        
+        if not existing_prog_df.empty:
         prog_terakhir = float(existing_prog_df.iloc[0]['progress_minggu_ini'] or 0.0)
         catatan_terakhir = existing_prog_df.iloc[0]['catatan'] or ""
         existing_foto_1 = existing_prog_df.iloc[0]['foto_1']
