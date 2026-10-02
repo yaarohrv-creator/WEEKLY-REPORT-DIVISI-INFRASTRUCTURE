@@ -720,33 +720,34 @@ elif menu == MENU_INPUT:
         existing_foto_2 = None
         
         with get_db_connection() as conn:
-            query_last = "SELECT progress_minggu_ini, catatan, foto_1, foto_2 FROM laporan_mingguan WHERE TRIM(LOWER(no_spk))=%s AND TRIM(LOWER(jenis_pekerjaan))=%s"
-            existing_prog_df = pd.read_sql_query(query_last, conn, params=(str(spk_data_selected['no_spk']).strip().lower(), str(spk_data_selected['jenis_pekerjaan']).strip().lower()))
-            
-            if not existing_prog_df.empty:
-                prog_terakhir = float(existing_prog_df.iloc[0]['progress_minggu_ini'] or 0.0)
-                catatan_terakhir = existing_prog_df.iloc[0]['catatan'] or ""
-                existing_foto_1 = existing_prog_df.iloc[0]['foto_1']
-                existing_foto_2 = existing_prog_df.iloc[0]['foto_2']
+        query_last = "SELECT progress_minggu_ini, catatan, foto_1, foto_2 FROM laporan_mingguan WHERE TRIM(LOWER(no_spk))=%s AND TRIM(LOWER(jenis_pekerjaan))=%s"
+        existing_prog_df = pd.read_sql_query(query_last, conn, params=(str(spk_data_selected['no_spk']).strip().lower(), str(spk_data_selected['jenis_pekerjaan']).strip().lower()))
 
-        # --- PRATINJAU FOTO DOKUMENTASI TERAKHIR ---
-    if is_valid_image(existing_foto_1) or is_valid_image(existing_foto_2):
-        st.markdown("📸 **Pratinjau Foto Dokumentasi Terakhir:**")
-        col_f1, col_f2 = st.columns(2)
-        
-        with col_f1:
-            if is_valid_image(existing_foto_1):
-                try:
-                    st.image(str(existing_foto_1).strip(), caption="Foto Dokumentasi 1 (Minggu Lalu)")
-                except Exception:
-                    st.warning("⚠️ Tidak dapat memuat Foto 1.")
-        
-        with col_f2:
-            if is_valid_image(existing_foto_2):
-                try:
-                    st.image(str(existing_foto_2).strip(), caption="Foto Dokumentasi 2 (Minggu Lalu)")
-                except Exception:
-                    st.warning("⚠️️ Tidak dapat memuat Foto 2.")
+        existing_foto_1 = None
+        existing_foto_2 = None
+
+        if not existing_prog_df.empty:
+            prog_terakhir = float(existing_prog_df.iloc[0]['progress_minggu_ini'] or 0.0)
+            catatan_terakhir = existing_prog_df.iloc[0]['catatan'] or ""
+            existing_foto_1 = existing_prog_df.iloc[0]['foto_1']
+            existing_foto_2 = existing_prog_df.iloc[0]['foto_2']
+
+            # --- PRATINJAU FOTO DOKUMENTASI TERAKHIR ---
+            if is_valid_image(existing_foto_1) or is_valid_image(existing_foto_2):
+                st.markdown("📸 **Pratinjau Foto Dokumentasi Terakhir:**")
+                col_f1, col_f2 = st.columns(2)
+                with col_f1:
+                    if is_valid_image(existing_foto_1):
+                        try:
+                            st.image(str(existing_foto_1).strip(), caption="Foto Dokumentasi 1 (Minggu Lalu)")
+                        except Exception:
+                            st.warning("⚠️ Tidak dapat memuat Foto 1.")
+                with col_f2:
+                    if is_valid_image(existing_foto_2):
+                        try:
+                            st.image(str(existing_foto_2).strip(), caption="Foto Dokumentasi 2 (Minggu Lalu)")
+                        except Exception:
+                            st.warning("⚠️ Tidak dapat memuat Foto 2.")
 
         with st.form(f"form_input_week_{tab_key_prefix}", clear_on_submit=False):
             tgl_laporan = st.date_input(
