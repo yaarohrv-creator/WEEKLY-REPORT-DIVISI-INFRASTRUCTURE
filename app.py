@@ -86,7 +86,9 @@ def init_db():
                         UNIQUE(no_spk, jenis_pekerjaan)
                     );
                 ''')
-
+                cursor.execute('ALTER TABLE master_spk ADD COLUMN IF NOT EXISTS nilai_spk_utama REAL DEFAULT 0;')
+                cursor.execute('ALTER TABLE master_spk ADD COLUMN IF NOT EXISTS lokasi TEXT;')
+                
                 # AUTO MIGRATION: Pastikan kolom lokasi & nilai_spk_utama ada
                 cursor.execute('''
                     ALTER TABLE master_spk 
@@ -115,7 +117,9 @@ def init_db():
                         foto_2 TEXT
                     );
                 ''')
-
+                cursor.execute('ALTER TABLE laporan_mingguan ADD COLUMN IF NOT EXISTS tanggal DATE;')
+                cursor.execute('ALTER TABLE history_progress ADD COLUMN IF NOT EXISTS tanggal DATE;')
+                
                 # 3. TABEL HISTORY_PROGRESS
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS history_progress (
