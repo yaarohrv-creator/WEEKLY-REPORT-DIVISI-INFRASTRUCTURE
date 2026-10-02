@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 import cloudinary
 import cloudinary.uploader
+from datetime import datetime
 
 # Modul untuk styling dan export Excel
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -323,7 +324,7 @@ if menu == MENU_DASHBOARD:
         "📜 Riwayat / History Update"
     ])
 
-    # 1. Query terdistribusi dengan pengurutan utama berdasarkan LOKASI secara alfabetis
+    # 1. Query terdistribusi menyertakan COALESCE untuk tanggal
     query_view = """
         WITH spk_totals AS (
             SELECT 
@@ -346,6 +347,7 @@ if menu == MENU_DASHBOARD:
                 foto_1,
                 foto_2,
                 waktu_input,
+                tanggal,  -- Kolom tanggal laporan
                 REGEXP_REPLACE(LOWER(TRIM(no_spk)), '\\s+', ' ', 'g') AS clean_no_spk,
                 REGEXP_REPLACE(LOWER(TRIM(jenis_pekerjaan)), '\\s+', ' ', 'g') AS clean_jenis_pekerjaan
             FROM laporan_mingguan
@@ -368,6 +370,7 @@ if menu == MENU_DASHBOARD:
             COALESCE(l.progress_minggu_lalu, 0) AS progress_minggu_lalu,
             COALESCE(l.progress_minggu_ini, 0) AS progress_minggu_ini,
             (COALESCE(l.progress_minggu_ini, 0) - COALESCE(l.progress_minggu_lalu, 0)) AS selisih_varian,
+            COALESCE(l.tanggal, l.waktu_input::date) AS tanggal_update,  -- Ambil tanggal
             l.catatan AS catatan,
             l.foto_1 AS foto_1,
             l.foto_2 AS foto_2
@@ -390,12 +393,11 @@ if menu == MENU_DASHBOARD:
             st.error(f"Error membaca data dashboard: {e}")
             df_all = pd.DataFrame()
 
-    # 2. Fungsi Format Grouped Excel dengan Urutan Lokasi Terkumpul Rapi
+    # 2. Format Grouped Excel dengan Tanggal Update
     def format_grouped_dashboard_df(df_input):
         if df_input.empty:
             return pd.DataFrame()
 
-        # SORTING UTAMA: Wajib mengurutkan Lokasi dulu, lalu No SPK, lalu Master ID
         df_sorted = df_input.sort_values(
             by=['lokasi', 'no_spk', 'master_id'],
             ascending=[True, True, True]
@@ -411,8 +413,6 @@ if menu == MENU_DASHBOARD:
 
         last_spk = None
 
-        # Pengosongan nilai (grouping visual) HANYA dilakukan pada atribut SPK,
-        # sedangkan kolom 'Lokasi' TETAP ditampilkan di setiap baris agar pengurutan tidak rusak.
         for _, row in df_sorted.iterrows():
             current_spk = row['no_spk']
             if current_spk != last_spk:
@@ -431,19 +431,24 @@ if menu == MENU_DASHBOARD:
         df_formatted['Kontraktor'] = kontraktor_list
         df_formatted['Nilai SPK Utama (Rp)'] = nilai_spk_list
         df_formatted['Unit / Wilayah'] = unit_list
-        df_formatted['Lokasi'] = df_sorted['lokasi']  # Nilai Lokasi tetap utuh di setiap baris
+        df_formatted['Lokasi'] = df_sorted['lokasi']
         df_formatted['Jenis Pekerjaan'] = df_sorted['jenis_pekerjaan']
         df_formatted['Jumlah'] = df_sorted['jumlah']
         df_formatted['Nilai Pekerjaan (Rp)'] = df_sorted['nilai_pekerjaan']
         df_formatted['Progress Minggu Lalu (%)'] = df_sorted['progress_minggu_lalu']
         df_formatted['Progress Minggu Ini (%)'] = df_sorted['progress_minggu_ini']
         df_formatted['Selisih / Varian (%)'] = df_sorted['selisih_varian']
+        
+        # Format Tanggal Update
+        df_formatted['Tanggal Update'] = pd.to_datetime(df_sorted['tanggal_update'], errors='coerce').dt.date
+        
         df_formatted['Catatan Pekerjaan Terbaru'] = df_sorted['catatan']
         df_formatted['Pratinjau Foto 1'] = df_sorted['foto_1']
         df_formatted['Pratinjau Foto 2'] = df_sorted['foto_2']
 
         return df_formatted
-    # 3. Render tabel dengan format Grouped Excel
+
+    # 3. Render Tabel Dashboard dengan DateColumn
     def render_dashboard_table(df_raw, tab_key_prefix):
         if df_raw.empty:
             st.info("💡 Belum ada data progress untuk wilayah/kategori ini.")
@@ -451,7 +456,7 @@ if menu == MENU_DASHBOARD:
 
         df_display = format_grouped_dashboard_df(df_raw)
 
-        st.caption("💡 **Tampilan Grouped Excel**: Nilai SPK Utama & Kontraktor hanya muncul di baris pertama tiap SPK. Nilai SPK Utama terhitung otomatis dari total Rincian Pekerjaan.")
+        st.caption("💡 **Tampilan Grouped Excel**: Nilai SPK Utama & Kontraktor hanya muncul di baris pertama tiap SPK. Anda dapat mengedit Tanggal Update, Progress, dan Catatan langsung di bawah ini.")
 
         editor_key = f"editor_{tab_key_prefix}"
         edited_df = st.data_editor(
@@ -463,17 +468,19 @@ if menu == MENU_DASHBOARD:
                 "real_id": None,
                 "Nomor SPK": st.column_config.TextColumn("Nomor SPK", disabled=True),
                 "Kontraktor": st.column_config.TextColumn("Kontraktor", disabled=True),
-                # FORMAT RUPIAH DENGAN DESIMAL DI STREAMLIT
                 "Nilai SPK Utama (Rp)": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %',.2f", disabled=True),
                 "Unit / Wilayah": st.column_config.TextColumn("Unit / Wilayah", disabled=True),
                 "Lokasi": st.column_config.TextColumn("Lokasi", disabled=True),
                 "Jenis Pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan", disabled=True),
                 "Jumlah": st.column_config.NumberColumn("Jumlah", format="%d", disabled=True),
-                # FORMAT RUPIAH DENGAN DESIMAL PADA NILAI PEKERJAAN
                 "Nilai Pekerjaan (Rp)": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %',.2f", disabled=True),
                 "Progress Minggu Lalu (%)": st.column_config.NumberColumn("Progress Minggu Lalu (%)", format="%.2f %%", disabled=True),
                 "Progress Minggu Ini (%)": st.column_config.NumberColumn("Progress Minggu Ini (%)", format="%.2f %%"),
                 "Selisih / Varian (%)": st.column_config.NumberColumn("Selisih / Varian (%)", format="%.2f %%", disabled=True),
+                
+                # --- KOLOM TANGGAL (INTERAKTIF & BISA DIEDIT VIA CALENDAR) ---
+                "Tanggal Update": st.column_config.DateColumn("Tanggal Update", format="DD/MM/YYYY"),
+                
                 "Catatan Pekerjaan Terbaru": st.column_config.TextColumn("Catatan Pekerjaan Terbaru"),
                 "Pratinjau Foto 1": st.column_config.ImageColumn("Pratinjau Foto 1"),
                 "Pratinjau Foto 2": st.column_config.ImageColumn("Pratinjau Foto 2"),
@@ -486,15 +493,24 @@ if menu == MENU_DASHBOARD:
                 cursor = conn.cursor()
                 for idx, row in edited_df.iterrows():
                     real_id = row.get('real_id')
+                    tgl_val = row.get('Tanggal Update')
+                    
                     if pd.notna(real_id) and str(real_id).strip() != "":
                         cursor.execute("""
                             UPDATE laporan_mingguan
-                            SET progress_minggu_ini = %s, catatan = %s
+                            SET progress_minggu_ini = %s,
+                                tanggal = %s,
+                                catatan = %s
                             WHERE id = %s
-                        """, (row.get('Progress Minggu Ini (%)'), row.get('Catatan Pekerjaan Terbaru'), int(real_id)))
+                        """, (
+                            row.get('Progress Minggu Ini (%)'),
+                            tgl_val,
+                            row.get('Catatan Pekerjaan Terbaru'),
+                            int(real_id)
+                        ))
                 conn.commit()
 
-            st.success("✅ Perubahan data berhasil disimpan!")
+            st.success("✅ Perubahan data dan tanggal berhasil disimpan!")
             st.rerun()
 
         st.markdown("---")
