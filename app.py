@@ -717,7 +717,81 @@ elif menu == MENU_INPUT:
                     jenis_clean = str(spk_data_selected['jenis_pekerjaan']).strip()
                     kontraktor_clean = str(spk_data_selected['kontraktor']).strip()
                     unit_clean = str(spk_data_selected['unit']).strip()
+if submit_btn:
+                if prog_ini < prog_terakhir:
+                    st.error("⚠️ Progress minggu ini tidak boleh lebih kecil dari minggu lalu!")
+                else:
+                    path_f1_final = existing_foto_1
+                    path_f2_final = existing_foto_2
 
+                    if f_upload_1:
+                        res_1 = cloudinary.uploader.upload(f_upload_1)
+                        path_f1_final = res_1.get("secure_url")
+
+                    if f_upload_2:
+                        res_2 = cloudinary.uploader.upload(f_upload_2)
+                        path_f2_final = res_2.get("secure_url")
+
+                    penambahan_week = prog_ini - prog_terakhir
+
+                    no_spk_clean = str(spk_data_selected['no_spk']).strip()
+                    jenis_clean = str(spk_data_selected['jenis_pekerjaan']).strip()
+                    kontraktor_clean = str(spk_data_selected['kontraktor']).strip()
+                    unit_clean = str(spk_data_selected['unit']).strip()
+
+                    # ⬇️ QUERY DATABASE DITAMBAHKAN DI SINI ⬇️
+                    try:
+                        with get_db_connection() as conn:
+                            cursor = conn.cursor()
+
+                            # 1. Update/Insert ke laporan_mingguan
+                            cursor.execute("""
+                                INSERT INTO laporan_mingguan (
+                                    tanggal, no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan,
+                                    progress_minggu_lalu, progress_minggu_ini, catatan, foto_1, foto_2
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """, (
+                                tgl_laporan,
+                                no_spk_clean,
+                                jenis_clean,
+                                kontraktor_clean,
+                                unit_clean,
+                                int(spk_data_selected['jumlah']),
+                                float(spk_data_selected['nilai_pekerjaan']),
+                                prog_terakhir,
+                                prog_ini,
+                                catatan_lap,
+                                path_f1_final,
+                                path_f2_final
+                            ))
+
+                            # 2. Insert log ke history_progress
+                            cursor.execute("""
+                                INSERT INTO history_progress (
+                                    tanggal, no_spk, jenis_pekerjaan, kontraktor, unit,
+                                    progress_minggu_lalu, progress_minggu_ini, progres_penambahan,
+                                    catatan, foto_1, foto_2
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """, (
+                                tgl_laporan,
+                                no_spk_clean,
+                                jenis_clean,
+                                kontraktor_clean,
+                                unit_clean,
+                                prog_terakhir,
+                                prog_ini,
+                                penambahan_week,
+                                catatan_lap,
+                                path_f1_final,
+                                path_f2_final
+                            ))
+
+                            conn.commit()
+
+                        st.success("🎉 Laporan progress minggu ini berhasil disimpan!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"⚠️ Gagal menyimpan ke database: {e}")
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
                         
