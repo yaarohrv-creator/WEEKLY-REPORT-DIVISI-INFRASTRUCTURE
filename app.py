@@ -403,7 +403,7 @@ if menu == MENU_DASHBOARD:
             return pd.DataFrame()
 
         df_sorted = df_input.sort_values(
-            by=['lokasi', 'no_spk', 'master_id'],
+            by=['master id','lokasi', 'no_spk'],
             ascending=[True, True, True]
         ).reset_index(drop=True)
 
