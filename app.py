@@ -317,8 +317,20 @@ if menu == MENU_DASHBOARD:
 
     # Query terdistribusi yang mengambil laporan mingguan TERBARU secara presisi
     query_view = """
-        WITH latest_laporan AS (
-            SELECT DISTINCT ON (REGEXP_REPLACE(LOWER(TRIM(no_spk)), '\s+', ' ', 'g'), REGEXP_REPLACE(LOWER(TRIM(jenis_pekerjaan)), '\s+', ' ', 'g'))
+        WITH spk_totals AS (
+            -- Calculate aggregate Total Nilai SPK Utama per No SPK dynamically
+            SELECT 
+                REGEXP_REPLACE(LOWER(TRIM(no_spk)), '\\s+', ' ', 'g') AS clean_no_spk,
+                SUM(COALESCE(nilai_pekerjaan, 0)) AS calculated_nilai_spk_utama
+            FROM master_spk
+            GROUP BY REGEXP_REPLACE(LOWER(TRIM(no_spk)), '\\s+', ' ', 'g')
+        ),
+        latest_laporan AS (
+            -- Fetch the most recent weekly report for each SPK and job type combination
+            SELECT DISTINCT ON (
+                REGEXP_REPLACE(LOWER(TRIM(no_spk)), '\\s+', ' ', 'g'), 
+                REGEXP_REPLACE(LOWER(TRIM(jenis_pekerjaan)), '\\s+', ' ', 'g')
+            )
                 id,
                 no_spk,
                 jenis_pekerjaan,
@@ -327,11 +339,13 @@ if menu == MENU_DASHBOARD:
                 catatan,
                 foto_1,
                 foto_2,
-                waktu_input
+                waktu_input,
+                REGEXP_REPLACE(LOWER(TRIM(no_spk)), '\\s+', ' ', 'g') AS clean_no_spk,
+                REGEXP_REPLACE(LOWER(TRIM(jenis_pekerjaan)), '\\s+', ' ', 'g') AS clean_jenis_pekerjaan
             FROM laporan_mingguan
             ORDER BY 
-                REGEXP_REPLACE(LOWER(TRIM(no_spk)), '\s+', ' ', 'g'),
-                REGEXP_REPLACE(LOWER(TRIM(jenis_pekerjaan)), '\s+', ' ', 'g'),
+                REGEXP_REPLACE(LOWER(TRIM(no_spk)), '\\s+', ' ', 'g'),
+                REGEXP_REPLACE(LOWER(TRIM(jenis_pekerjaan)), '\\s+', ' ', 'g'),
                 id DESC
         )
         SELECT 
@@ -339,12 +353,12 @@ if menu == MENU_DASHBOARD:
             l.id AS real_id,
             m.no_spk AS no_spk,
             m.kontraktor AS kontraktor,
-            m.nilai_spk_utama AS nilai_spk_utama,
+            COALESCE(t.calculated_nilai_spk_utama, m.nilai_spk_utama, 0) AS nilai_spk_utama,
             m.unit AS unit,
             m.lokasi AS lokasi,
             m.jenis_pekerjaan AS jenis_pekerjaan,
             CAST(COALESCE(m.jumlah, 1) AS INTEGER) AS jumlah,
-            m.nilai_pekerjaan AS nilai_pekerjaan,
+            COALESCE(m.nilai_pekerjaan, 0) AS nilai_pekerjaan,
             COALESCE(l.progress_minggu_lalu, 0) AS progress_minggu_lalu,
             COALESCE(l.progress_minggu_ini, 0) AS progress_minggu_ini,
             (COALESCE(l.progress_minggu_ini, 0) - COALESCE(l.progress_minggu_lalu, 0)) AS selisih_varian,
@@ -352,9 +366,11 @@ if menu == MENU_DASHBOARD:
             l.foto_1 AS foto_1,
             l.foto_2 AS foto_2
         FROM master_spk m
+        LEFT JOIN spk_totals t
+            ON REGEXP_REPLACE(LOWER(TRIM(m.no_spk)), '\\s+', ' ', 'g') = t.clean_no_spk
         LEFT JOIN latest_laporan l 
-            ON REGEXP_REPLACE(LOWER(TRIM(m.no_spk)), '\s+', ' ', 'g') = REGEXP_REPLACE(LOWER(TRIM(l.no_spk)), '\s+', ' ', 'g')
-           AND REGEXP_REPLACE(LOWER(TRIM(m.jenis_pekerjaan)), '\s+', ' ', 'g') = REGEXP_REPLACE(LOWER(TRIM(l.jenis_pekerjaan)), '\s+', ' ', 'g')
+            ON REGEXP_REPLACE(LOWER(TRIM(m.no_spk)), '\\s+', ' ', 'g') = l.clean_no_spk
+           AND REGEXP_REPLACE(LOWER(TRIM(m.jenis_pekerjaan)), '\\s+', ' ', 'g') = l.clean_jenis_pekerjaan
         ORDER BY m.id ASC
     """
 
