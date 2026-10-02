@@ -480,7 +480,21 @@ if menu == MENU_DASHBOARD:
             },
             key=editor_key
         )
-
+# --- TANGGAL BISA DIEDIT DENGAN CALENDAR PICKER ---
+            "tgl_update": st.column_config.DateColumn(
+                "Tanggal Update",
+                format="DD/MM/YYYY",
+                step=1,
+                required=False
+            ),
+            
+            "catatan_pekerjaan": st.column_config.TextColumn("Catatan Pekerjaan Terbaru"),
+        },
+        use_container_width=True,
+        num_rows="fixed",
+        key=f"editor_{key_prefix}"
+    )
+        
         if st.button("💾 Simpan Perubahan Data", key=f"btn_save_{tab_key_prefix}"):
             with get_db_connection() as conn:
                 cursor = conn.cursor()
