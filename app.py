@@ -723,15 +723,24 @@ elif menu == MENU_INPUT:
                 existing_foto_1 = existing_prog_df.iloc[0]['foto_1']
                 existing_foto_2 = existing_prog_df.iloc[0]['foto_2']
 
-        if existing_foto_1 or existing_foto_2:
-            st.markdown("**📸 Pratinjau Foto Dokumentasi Terakhir:**")
-            c_img1, c_img2 = st.columns(2)
-            with c_img1:
-                if existing_foto_1:
-                    st.image(existing_foto_1, caption="Foto Dokumentasi 1 (Minggu Lalu)", use_container_width=True)
-            with c_img2:
-                if existing_foto_2:
-                    st.image(existing_foto_2, caption="Foto Dokumentasi 2 (Minggu Lalu)", use_container_width=True)
+        # --- PRATINJAU FOTO DOKUMENTASI TERAKHIR ---
+    if is_valid_image(existing_foto_1) or is_valid_image(existing_foto_2):
+        st.markdown("📸 **Pratinjau Foto Dokumentasi Terakhir:**")
+        col_f1, col_f2 = st.columns(2)
+        
+        with col_f1:
+            if is_valid_image(existing_foto_1):
+                try:
+                    st.image(str(existing_foto_1).strip(), caption="Foto Dokumentasi 1 (Minggu Lalu)")
+                except Exception:
+                    st.warning("⚠️ Tidak dapat memuat Foto 1.")
+        
+        with col_f2:
+            if is_valid_image(existing_foto_2):
+                try:
+                    st.image(str(existing_foto_2).strip(), caption="Foto Dokumentasi 2 (Minggu Lalu)")
+                except Exception:
+                    st.warning("⚠️️ Tidak dapat memuat Foto 2.")
 
         with st.form(f"form_input_week_{tab_key_prefix}", clear_on_submit=False):
             tgl_laporan = st.date_input(
