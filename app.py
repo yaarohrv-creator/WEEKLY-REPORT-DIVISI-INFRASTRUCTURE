@@ -661,27 +661,40 @@ elif menu == MENU_INPUT:
                 if existing_foto_2:
                     st.image(existing_foto_2, caption="Foto Dokumentasi 2 (Minggu Lalu)", use_container_width=True)
 
-        with st.form(f"form_input_week_{tab_key_prefix}", clear_on_submit=False):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("📝 Progress Minggu Ini")
-                prog_ini = st.number_input(
-                    f"Progress Akumulatif Minggu Ini (%) - (Hingga Minggu Lalu: {prog_terakhir:.2f}%)", 
-                    min_value=prog_terakhir,
+        # Form Input Progress Mingguan
+        with st.form(key=f"form_input_{tab_key_prefix}"):
+            # --- PENAMBAHAN INPUT TANGGAL (Otomatis Hari Ini & Bisa Diedit) ---
+            tgl_laporan = st.date_input(
+                "Tanggal Laporan",
+                value=datetime.now().date(), # Otomatis terisi tanggal hari ini
+                key=f"input_tgl_{tab_key_prefix}"
+            )
+
+            col_p1, col_p2 = st.columns(2)
+            with col_p1:
+                progress_ini = st.number_input(
+                    "Progress Minggu Ini (%)", 
+                    min_value=0.0, 
                     max_value=100.0, 
-                    value=prog_terakhir,
-                    step=0.01,
-                    format="%.2f"
+                    value=progress_lalu, 
+                    step=0.5,
+                    key=f"input_prog_ini_{tab_key_prefix}"
                 )
-                catatan_lap = st.text_area("Catatan Pekerjaan Terbaru", value=catatan_terakhir)
+            with col_p2:
+                penambahan_prog = progress_ini - progress_lalu
+                st.metric("Penambahan Progress Minggu Ini", f"{penambahan_prog:+.2f}%")
+
+            catatan_input = st.text_area("Catatan Pekerjaan / kendala Lapangan:", key=f"catatan_{tab_key_prefix}")
             
-            with col2:
-                st.subheader("📷 Update Foto Dokumentasi (Upload Baru)")
-                f_upload_1 = st.file_uploader("Upload Foto 1", type=["jpg", "jpeg", "png"], key=f"f1_{tab_key_prefix}")
-                f_upload_2 = st.file_uploader("Upload Foto 2", type=["jpg", "jpeg", "png"], key=f"f2_{tab_key_prefix}")
-            
-            submit_btn = st.form_submit_button("💾 Simpan Laporan Minggu Ini")
+            st.markdown("---")
+            st.write("📷 **Upload Foto Dokumentasi Lapangan (Opsional):**")
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                uploaded_foto1 = st.file_uploader("Upload Foto 1", type=["jpg", "jpeg", "png"], key=f"foto1_{tab_key_prefix}")
+            with col_f2:
+                uploaded_foto2 = st.file_uploader("Upload Foto 2", type=["jpg", "jpeg", "png"], key=f"foto2_{tab_key_prefix}")
+
+            submit_btn = st.form_submit_button("🚀 Simpan Laporan Progress")
             
             if submit_btn:
                 if prog_ini < prog_terakhir:
