@@ -661,7 +661,6 @@ elif menu == MENU_INPUT:
                 if existing_foto_2:
                     st.image(existing_foto_2, caption="Foto Dokumentasi 2 (Minggu Lalu)", use_container_width=True)
 
-        # Form Input Progress Mingguan
         with st.form(key=f"form_input_{tab_key_prefix}"):
             # --- PENAMBAHAN INPUT TANGGAL (Otomatis Hari Ini & Bisa Diedit) ---
             tgl_laporan = st.date_input(
@@ -712,11 +711,6 @@ elif menu == MENU_INPUT:
                         path_f2_final = res_2.get("secure_url")
 
                     penambahan_week = prog_ini - prog_terakhir
-
-                    no_spk_clean = str(spk_data_selected['no_spk']).strip()
-                    jenis_clean = str(spk_data_selected['jenis_pekerjaan']).strip()
-                    kontraktor_clean = str(spk_data_selected['kontraktor']).strip()
-                    unit_clean = str(spk_data_selected['unit']).strip()
 if submit_btn:
                 if prog_ini < prog_terakhir:
                     st.error("⚠️ Progress minggu ini tidak boleh lebih kecil dari minggu lalu!")
@@ -734,17 +728,12 @@ if submit_btn:
 
                     penambahan_week = prog_ini - prog_terakhir
 
-                    no_spk_clean = str(spk_data_selected['no_spk']).strip()
-                    jenis_clean = str(spk_data_selected['jenis_pekerjaan']).strip()
-                    kontraktor_clean = str(spk_data_selected['kontraktor']).strip()
-                    unit_clean = str(spk_data_selected['unit']).strip()
-
-                    # ⬇️ QUERY DATABASE DITAMBAHKAN DI SINI ⬇️
+                    # ⬇️ TEMPELKAN KODE DI SINI (BARIS 714) ⬇️
                     try:
                         with get_db_connection() as conn:
                             cursor = conn.cursor()
 
-                            # 1. Update/Insert ke laporan_mingguan
+                            # 1. Insert ke laporan_mingguan
                             cursor.execute("""
                                 INSERT INTO laporan_mingguan (
                                     tanggal, no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan,
@@ -752,20 +741,20 @@ if submit_btn:
                                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """, (
                                 tgl_laporan,
-                                no_spk_clean,
-                                jenis_clean,
-                                kontraktor_clean,
-                                unit_clean,
-                                int(spk_data_selected['jumlah']),
-                                float(spk_data_selected['nilai_pekerjaan']),
+                                str(spk_data_selected['no_spk']).strip(),
+                                str(spk_data_selected['jenis_pekerjaan']).strip(),
+                                str(spk_data_selected['kontraktor']).strip(),
+                                str(spk_data_selected['unit']).strip(),
+                                int(spk_data_selected.get('jumlah', 1)),
+                                float(spk_data_selected.get('nilai_pekerjaan', 0)),
                                 prog_terakhir,
                                 prog_ini,
-                                catatan_lap,
+                                catatan_input,
                                 path_f1_final,
                                 path_f2_final
                             ))
 
-                            # 2. Insert log ke history_progress
+                            # 2. Insert Log ke history_progress
                             cursor.execute("""
                                 INSERT INTO history_progress (
                                     tanggal, no_spk, jenis_pekerjaan, kontraktor, unit,
@@ -774,24 +763,29 @@ if submit_btn:
                                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """, (
                                 tgl_laporan,
-                                no_spk_clean,
-                                jenis_clean,
-                                kontraktor_clean,
-                                unit_clean,
+                                str(spk_data_selected['no_spk']).strip(),
+                                str(spk_data_selected['jenis_pekerjaan']).strip(),
+                                str(spk_data_selected['kontraktor']).strip(),
+                                str(spk_data_selected['unit']).strip(),
                                 prog_terakhir,
                                 prog_ini,
                                 penambahan_week,
-                                catatan_lap,
+                                catatan_input,
                                 path_f1_final,
                                 path_f2_final
                             ))
 
                             conn.commit()
 
-                        st.success("🎉 Laporan progress minggu ini berhasil disimpan!")
+                        st.success("🎉 Laporan progress mingguan berhasil disimpan!")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"⚠️ Gagal menyimpan ke database: {e}")
+                        st.error(f"⚠️ Gagal menyimpan data ke database: {e}")
+                    no_spk_clean = str(spk_data_selected['no_spk']).strip()
+                    jenis_clean = str(spk_data_selected['jenis_pekerjaan']).strip()
+                    kontraktor_clean = str(spk_data_selected['kontraktor']).strip()
+                    unit_clean = str(spk_data_selected['unit']).strip()
+
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
                         
