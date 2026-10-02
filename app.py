@@ -176,20 +176,12 @@ def generate_excel_full_feature(df):
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             cell.border = border_standard
 
-        # Styling Isi Sheet 1 & Formatting Rupiah/Desimal di Excel
+        # Styling Isi Sheet 1
         for row_idx in range(2, worksheet_progress.max_row + 1):
             for col_idx in range(1, worksheet_progress.max_column + 1):
                 cell = worksheet_progress.cell(row=row_idx, column=col_idx)
                 cell.border = border_standard
                 cell.alignment = Alignment(vertical="center")
-
-                # Ambil Nama Header untuk format nilai Rupiah & Persentase
-                header_name = worksheet_progress.cell(row=1, column=col_idx).value
-                if header_name in ['Nilai SPK Utama (Rp)', 'Nilai Pekerjaan (Rp)']:
-                    # Format Rupiah dengan desimal (contoh: Rp 1.500.000,00)
-                    cell.number_format = '"Rp "#,##0.00'
-                elif '%' in str(header_name):
-                    cell.number_format = '0.00"%"'
 
         # Lebar Kolom
         for col in worksheet_progress.columns:
@@ -463,14 +455,12 @@ if menu == MENU_DASHBOARD:
                 "real_id": None,
                 "Nomor SPK": st.column_config.TextColumn("Nomor SPK", disabled=True),
                 "Kontraktor": st.column_config.TextColumn("Kontraktor", disabled=True),
-                # FORMAT RUPIAH DENGAN DESIMAL DI STREAMLIT
-                "Nilai SPK Utama (Rp)": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %',.2f", disabled=True),
+                "Nilai SPK Utama (Rp)": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %'d", disabled=True),
                 "Unit / Wilayah": st.column_config.TextColumn("Unit / Wilayah", disabled=True),
                 "Lokasi": st.column_config.TextColumn("Lokasi", disabled=True),
                 "Jenis Pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan", disabled=True),
                 "Jumlah": st.column_config.NumberColumn("Jumlah", format="%d", disabled=True),
-                # FORMAT RUPIAH DENGAN DESIMAL PADA NILAI PEKERJAAN
-                "Nilai Pekerjaan (Rp)": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %',.2f", disabled=True),
+                "Nilai Pekerjaan (Rp)": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %'d", disabled=True),
                 "Progress Minggu Lalu (%)": st.column_config.NumberColumn("Progress Minggu Lalu (%)", format="%.2f %%", disabled=True),
                 "Progress Minggu Ini (%)": st.column_config.NumberColumn("Progress Minggu Ini (%)", format="%.2f %%"),
                 "Selisih / Varian (%)": st.column_config.NumberColumn("Selisih / Varian (%)", format="%.2f %%", disabled=True),
@@ -620,7 +610,6 @@ elif menu == MENU_INPUT:
 
         try:
             val_num = float(spk_data_selected['nilai_pekerjaan'])
-            # Formatting ke Rupiah dengan 2 angka desimal
             nilai_formatted = f"Rp {val_num:,.2f}"
         except (ValueError, TypeError):
             nilai_formatted = "-"
@@ -908,21 +897,12 @@ elif menu == MENU_MASTER:
                 "ID": None,
                 "Nomor SPK": st.column_config.TextColumn("Nomor SPK", width="medium"),
                 "Kontraktor": st.column_config.TextColumn("Kontraktor", width="medium"),
-                "Nilai SPK Utama (Rp)": st.column_config.NumberColumn(
-            "Nilai SPK Utama (Rp)",
-            format="Rp %,d",  # Menggunakan pemisah koma/titik untuk ribuan
-        ),
+                "Nilai SPK Utama (Rp)": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %'d", disabled=True),
                 "Unit / Wilayah": st.column_config.TextColumn("Unit / Wilayah", width="small"),
                 "Lokasi": st.column_config.TextColumn("Lokasi", width="small"),
                 "Jenis Pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan", width="large", required=True),
                 "Jumlah": st.column_config.NumberColumn("Jumlah", min_value=1, step=1, required=True),
-                "Nilai Pekerjaan (Rp)": st.column_config.NumberColumn(
-            "Nilai Pekerjaan (Rp)",
-            format="Rp %,d",
-        ),
-    },
-    use_container_width=True,
-)
+                "Nilai Pekerjaan (Rp)": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %'d", required=True),
                 "Catatan": st.column_config.TextColumn("Catatan", width="medium")
             },
             use_container_width=True,
