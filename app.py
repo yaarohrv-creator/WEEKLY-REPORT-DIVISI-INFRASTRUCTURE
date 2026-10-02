@@ -718,11 +718,12 @@ elif menu == MENU_INPUT:
                 catatan_terakhir = existing_prog_df.iloc[0]['catatan'] or ""
                 existing_foto_1 = existing_prog_df.iloc[0]['foto_1']
                 existing_foto_2 = existing_prog_df.iloc[0]['foto_2']
+    
     def is_valid_image(img_val):
-    if pd.isna(img_val) or img_val is None:
-        return False
-    img_str = str(img_val).strip()
-    return img_str != "" and img_str.lower() != "nan" and img_str.lower() != "none"
+        if pd.isna(img_val) or img_val is None:
+            return False
+        img_str = str(img_val).strip()
+        return img_str != "" and img_str.lower() != "nan" and img_str.lower() != "none"
 
     if is_valid_image(existing_foto_1) or is_valid_image(existing_foto_2):
         st.markdown("**📸 Pratinjau Foto Dokumentasi Terakhir:**")
