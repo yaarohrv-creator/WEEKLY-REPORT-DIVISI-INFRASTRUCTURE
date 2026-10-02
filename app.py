@@ -4,8 +4,8 @@ import re
 import time
 import requests
 import psycopg2
-import streamlit as st
 import pandas as pd
+import streamlit as st
 import cloudinary
 import cloudinary.uploader
 from datetime import datetime
@@ -718,28 +718,22 @@ elif menu == MENU_INPUT:
                 catatan_terakhir = existing_prog_df.iloc[0]['catatan'] or ""
                 existing_foto_1 = existing_prog_df.iloc[0]['foto_1']
                 existing_foto_2 = existing_prog_df.iloc[0]['foto_2']
-    
-    def is_valid_image(img_val):
-        if pd.isna(img_val) or img_val is None:
-            return False
-        img_str = str(img_val).strip()
-        return img_str != "" and img_str.lower() != "nan" and img_str.lower() != "none"
 
-    if is_valid_image(existing_foto_1) or is_valid_image(existing_foto_2):
-        st.markdown("**📸 Pratinjau Foto Dokumentasi Terakhir:**")
-        c_img1, c_img2 = st.columns(2)
-        with c_img1:
-            if is_valid_image(existing_foto_1):
-                try:
+        if existing_foto_1 or existing_foto_2:
+            st.markdown("**📸 Pratinjau Foto Dokumentasi Terakhir:**")
+            c_img1, c_img2 = st.columns(2)
+            with c_img1:
+                if existing_foto_1:
                     st.image(existing_foto_1, caption="Foto Dokumentasi 1 (Minggu Lalu)")
-                except Exception:
-                    st.warning("⚠️ Tidak dapat memuat Foto 1.")
-        with c_img2:
-            if is_valid_image(existing_foto_2):
-                try:
+            with c_img2:
+                if existing_foto_2:
                     st.image(existing_foto_2, caption="Foto Dokumentasi 2 (Minggu Lalu)")
-                except Exception:
-                    st.warning("⚠️️ Tidak dapat memuat Foto 2.")
+        with st.form(f"form_input_week_{tab_key_prefix}", clear_on_submit=False):
+            tgl_laporan = st.date_input(
+                "Tanggal Laporan",
+                value=datetime.now().date(),
+                key=f"input_tgl_{tab_key_prefix}"
+            )
 
             col1, col2 = st.columns(2)
             with col1:
