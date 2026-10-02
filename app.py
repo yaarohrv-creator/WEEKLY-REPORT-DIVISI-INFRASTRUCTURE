@@ -724,10 +724,10 @@ elif menu == MENU_INPUT:
             c_img1, c_img2 = st.columns(2)
             with c_img1:
                 if existing_foto_1:
-                    st.image(existing_foto_1, caption="Foto Dokumentasi 1 (Minggu Lalu)", use_container_width=True)
+                    st.image(existing_foto_1, caption="Foto Dokumentasi 1 (Minggu Lalu)", use_column_width=True)
             with c_img2:
                 if existing_foto_2:
-                    st.image(existing_foto_2, caption="Foto Dokumentasi 2 (Minggu Lalu)", use_container_width=True)
+                    st.image(existing_foto_2, caption="Foto Dokumentasi 2 (Minggu Lalu)", use_column_width=True)
 
         with st.form(f"form_input_week_{tab_key_prefix}", clear_on_submit=False):
             tgl_laporan = st.date_input(
