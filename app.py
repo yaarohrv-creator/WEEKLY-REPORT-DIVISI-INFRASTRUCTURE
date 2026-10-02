@@ -315,10 +315,9 @@ if menu == MENU_DASHBOARD:
         "📜 Riwayat / History Update"
     ])
 
-    # Query terdistribusi dengan urutan berdasarkan LOKASI dan NOMOR SPK
+    # 1. Query terdistribusi dengan urutan berdasarkan LOKASI secara alfabetis, NOMOR SPK, lalu ID Master
     query_view = """
         WITH spk_totals AS (
-            -- Calculate aggregate Total Nilai SPK Utama per No SPK dynamically
             SELECT 
                 REGEXP_REPLACE(LOWER(TRIM(no_spk)), '\\s+', ' ', 'g') AS clean_no_spk,
                 SUM(COALESCE(nilai_pekerjaan, 0)) AS calculated_nilai_spk_utama
@@ -326,7 +325,6 @@ if menu == MENU_DASHBOARD:
             GROUP BY REGEXP_REPLACE(LOWER(TRIM(no_spk)), '\\s+', ' ', 'g')
         ),
         latest_laporan AS (
-            -- Fetch the most recent weekly report for each SPK and job type combination
             SELECT DISTINCT ON (
                 REGEXP_REPLACE(LOWER(TRIM(no_spk)), '\\s+', ' ', 'g'), 
                 REGEXP_REPLACE(LOWER(TRIM(jenis_pekerjaan)), '\\s+', ' ', 'g')
@@ -355,7 +353,7 @@ if menu == MENU_DASHBOARD:
             m.kontraktor AS kontraktor,
             COALESCE(t.calculated_nilai_spk_utama, m.nilai_spk_utama, 0) AS nilai_spk_utama,
             m.unit AS unit,
-            m.lokasi AS lokasi,
+            COALESCE(m.lokasi, '-') AS lokasi,
             m.jenis_pekerjaan AS jenis_pekerjaan,
             CAST(COALESCE(m.jumlah, 1) AS INTEGER) AS jumlah,
             COALESCE(m.nilai_pekerjaan, 0) AS nilai_pekerjaan,
@@ -383,12 +381,14 @@ if menu == MENU_DASHBOARD:
         except Exception as e:
             st.error(f"Error membaca data dashboard: {e}")
             df_all = pd.DataFrame()
-    # 2. Fungsi Pemformat Grouped Excel khusus Dashboard Progress
+
+    # 2. Fungsi Format Grouped Excel dengan Urutan Lokasi Tetap Terjaga
     def format_grouped_dashboard_df(df_input):
         if df_input.empty:
             return pd.DataFrame()
 
-        df_sorted = df_input.sort_values(by=['no_spk', 'real_id']).reset_index(drop=True)
+        # Mengurutkan berdasarkan Lokasi terlebih dahulu, lalu No SPK & Master ID
+        df_sorted = df_input.sort_values(by=['lokasi', 'no_spk', 'master_id']).reset_index(drop=True)
         df_formatted = pd.DataFrame()
         
         df_formatted['real_id'] = df_sorted['real_id']
@@ -433,7 +433,6 @@ if menu == MENU_DASHBOARD:
         df_formatted['Pratinjau Foto 2'] = df_sorted['foto_2']
 
         return df_formatted
-
     # 3. Render tabel dengan format Grouped Excel
     def render_dashboard_table(df_raw, tab_key_prefix):
         if df_raw.empty:
