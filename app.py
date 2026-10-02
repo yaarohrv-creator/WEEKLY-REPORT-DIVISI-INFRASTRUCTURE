@@ -446,19 +446,12 @@ if menu == MENU_DASHBOARD:
         # Format Tanggal Update
         df_formatted['Tanggal Update'] = pd.to_datetime(df_sorted['tanggal_update'], errors='coerce').dt.date
         
-        df_formatted['Catatan Pekerjaan Terbaru'] = (
-        df_sorted['catatan']
-        .fillna('')
+        df_formatted['Catatan Pekerjaan Terbaru'] = df_sorted['catatan'].fillna('')
         .replace(['nan', 'None', 'NaN'], '')
-    )
-    
-    df_formatted['Pratinjau Foto 1'] = df_sorted['foto_1']
-    df_formatted['Pratinjau Foto 2'] = df_sorted['foto_2']
+        df_formatted['Pratinjau Foto 1'] = df_sorted['foto_1']
+        df_formatted['Pratinjau Foto 2'] = df_sorted['foto_2']
 
-    # Opsional: bersihkan seluruh dataframe dari nilai NaN tersisa
-    df_formatted = df_formatted.fillna('')
-
-    return df_formatted
+        return df_formatted
 
     # 3. Render Tabel Dashboard dengan DateColumn
     def render_dashboard_table(df_raw, tab_key_prefix):
