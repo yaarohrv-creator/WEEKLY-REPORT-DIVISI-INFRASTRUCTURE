@@ -176,12 +176,20 @@ def generate_excel_full_feature(df):
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             cell.border = border_standard
 
-        # Styling Isi Sheet 1
+        # Styling Isi Sheet 1 & Formatting Rupiah/Desimal di Excel
         for row_idx in range(2, worksheet_progress.max_row + 1):
             for col_idx in range(1, worksheet_progress.max_column + 1):
                 cell = worksheet_progress.cell(row=row_idx, column=col_idx)
                 cell.border = border_standard
                 cell.alignment = Alignment(vertical="center")
+
+                # Ambil Nama Header untuk format nilai Rupiah & Persentase
+                header_name = worksheet_progress.cell(row=1, column=col_idx).value
+                if header_name in ['Nilai SPK Utama (Rp)', 'Nilai Pekerjaan (Rp)']:
+                    # Format Rupiah dengan desimal (contoh: Rp 1.500.000,00)
+                    cell.number_format = '"Rp "#,##0.00'
+                elif '%' in str(header_name):
+                    cell.number_format = '0.00"%"'
 
         # Lebar Kolom
         for col in worksheet_progress.columns:
