@@ -908,12 +908,21 @@ elif menu == MENU_MASTER:
                 "ID": None,
                 "Nomor SPK": st.column_config.TextColumn("Nomor SPK", width="medium"),
                 "Kontraktor": st.column_config.TextColumn("Kontraktor", width="medium"),
-                "Nilai SPK Utama (Rp)": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %'d", disabled=True),
+                "Nilai SPK Utama (Rp)": st.column_config.NumberColumn(
+            "Nilai SPK Utama (Rp)",
+            format="Rp %,d",  # Menggunakan pemisah koma/titik untuk ribuan
+        ),
                 "Unit / Wilayah": st.column_config.TextColumn("Unit / Wilayah", width="small"),
                 "Lokasi": st.column_config.TextColumn("Lokasi", width="small"),
                 "Jenis Pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan", width="large", required=True),
                 "Jumlah": st.column_config.NumberColumn("Jumlah", min_value=1, step=1, required=True),
-                "Nilai Pekerjaan (Rp)": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %'d", required=True),
+                "Nilai Pekerjaan (Rp)": st.column_config.NumberColumn(
+            "Nilai Pekerjaan (Rp)",
+            format="Rp %,d",
+        ),
+    },
+    use_container_width=True,
+)
                 "Catatan": st.column_config.TextColumn("Catatan", width="medium")
             },
             use_container_width=True,
