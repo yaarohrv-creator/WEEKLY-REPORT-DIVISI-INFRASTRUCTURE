@@ -315,7 +315,7 @@ if menu == MENU_DASHBOARD:
         "📜 Riwayat / History Update"
     ])
 
-    # 1. Query terdistribusi dengan urutan berdasarkan LOKASI secara alfabetis, NOMOR SPK, lalu ID Master
+    # 1. Query terdistribusi dengan pengurutan utama berdasarkan LOKASI secara alfabetis
     query_view = """
         WITH spk_totals AS (
             SELECT 
@@ -382,25 +382,29 @@ if menu == MENU_DASHBOARD:
             st.error(f"Error membaca data dashboard: {e}")
             df_all = pd.DataFrame()
 
-    # 2. Fungsi Format Grouped Excel dengan Urutan Lokasi Tetap Terjaga
+    # 2. Fungsi Format Grouped Excel dengan Urutan Lokasi Terkumpul Rapi
     def format_grouped_dashboard_df(df_input):
         if df_input.empty:
             return pd.DataFrame()
 
-        # Mengurutkan berdasarkan Lokasi terlebih dahulu, lalu No SPK & Master ID
-        df_sorted = df_input.sort_values(by=['lokasi', 'no_spk', 'master_id']).reset_index(drop=True)
+        # SORTING UTAMA: Wajib mengurutkan Lokasi dulu, lalu No SPK, lalu Master ID
+        df_sorted = df_input.sort_values(
+            by=['lokasi', 'no_spk', 'master_id'],
+            ascending=[True, True, True]
+        ).reset_index(drop=True)
+
         df_formatted = pd.DataFrame()
-        
         df_formatted['real_id'] = df_sorted['real_id']
         
         nomor_spk_list = []
         kontraktor_list = []
         nilai_spk_list = []
         unit_list = []
-        lokasi_list = []
 
         last_spk = None
 
+        # Pengosongan nilai (grouping visual) HANYA dilakukan pada atribut SPK,
+        # sedangkan kolom 'Lokasi' TETAP ditampilkan di setiap baris agar pengurutan tidak rusak.
         for _, row in df_sorted.iterrows():
             current_spk = row['no_spk']
             if current_spk != last_spk:
@@ -408,20 +412,18 @@ if menu == MENU_DASHBOARD:
                 kontraktor_list.append(row['kontraktor'])
                 nilai_spk_list.append(row['nilai_spk_utama'])
                 unit_list.append(row['unit'])
-                lokasi_list.append(row['lokasi'])
                 last_spk = current_spk
             else:
                 nomor_spk_list.append("")
                 kontraktor_list.append("")
                 nilai_spk_list.append(None)
                 unit_list.append("")
-                lokasi_list.append("")
 
         df_formatted['Nomor SPK'] = nomor_spk_list
         df_formatted['Kontraktor'] = kontraktor_list
         df_formatted['Nilai SPK Utama (Rp)'] = nilai_spk_list
         df_formatted['Unit / Wilayah'] = unit_list
-        df_formatted['Lokasi'] = lokasi_list
+        df_formatted['Lokasi'] = df_sorted['lokasi']  # Nilai Lokasi tetap utuh di setiap baris
         df_formatted['Jenis Pekerjaan'] = df_sorted['jenis_pekerjaan']
         df_formatted['Jumlah'] = df_sorted['jumlah']
         df_formatted['Nilai Pekerjaan (Rp)'] = df_sorted['nilai_pekerjaan']
