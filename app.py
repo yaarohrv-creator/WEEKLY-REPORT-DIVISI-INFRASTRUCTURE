@@ -10,12 +10,6 @@ import cloudinary
 import cloudinary.uploader
 from datetime import datetime
 
-def is_valid_image(img_val):
-    if pd.isna(img_val) or img_val is None:
-        return False
-    img_str = str(img_val).strip()
-    return img_str != "" and img_str.lower() != "nan" and img_str.lower() != "none"
-    
 # Modul untuk styling dan export Excel
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
