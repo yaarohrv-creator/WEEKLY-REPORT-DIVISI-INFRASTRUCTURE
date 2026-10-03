@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 import cloudinary
 import cloudinary.uploader
+from datetime import datetime
 
 # Modul untuk styling dan export Excel
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -85,7 +86,9 @@ def init_db():
                         UNIQUE(no_spk, jenis_pekerjaan)
                     );
                 ''')
-
+                cursor.execute('ALTER TABLE master_spk ADD COLUMN IF NOT EXISTS nilai_spk_utama REAL DEFAULT 0;')
+                cursor.execute('ALTER TABLE master_spk ADD COLUMN IF NOT EXISTS lokasi TEXT;')
+                
                 # AUTO MIGRATION: Pastikan kolom lokasi & nilai_spk_utama ada
                 cursor.execute('''
                     ALTER TABLE master_spk 
@@ -114,7 +117,9 @@ def init_db():
                         foto_2 TEXT
                     );
                 ''')
-
+                cursor.execute('ALTER TABLE laporan_mingguan ADD COLUMN IF NOT EXISTS tanggal DATE;')
+                cursor.execute('ALTER TABLE history_progress ADD COLUMN IF NOT EXISTS tanggal DATE;')
+                
                 # 3. TABEL HISTORY_PROGRESS
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS history_progress (
@@ -176,12 +181,20 @@ def generate_excel_full_feature(df):
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             cell.border = border_standard
 
-        # Styling Isi Sheet 1
+        # Styling Isi Sheet 1 & Formatting Rupiah/Desimal di Excel
         for row_idx in range(2, worksheet_progress.max_row + 1):
             for col_idx in range(1, worksheet_progress.max_column + 1):
                 cell = worksheet_progress.cell(row=row_idx, column=col_idx)
                 cell.border = border_standard
                 cell.alignment = Alignment(vertical="center")
+
+                # Ambil Nama Header untuk format nilai Rupiah & Persentase
+                header_name = worksheet_progress.cell(row=1, column=col_idx).value
+                if header_name in ['Nilai SPK Utama (Rp)', 'Nilai Pekerjaan (Rp)']:
+                    # Format Rupiah dengan desimal (contoh: Rp 1.500.000,00)
+                    cell.number_format = '"Rp "#,##0.00'
+                elif '%' in str(header_name):
+                    cell.number_format = '0.00"%"'
 
         # Lebar Kolom
         for col in worksheet_progress.columns:
@@ -315,7 +328,7 @@ if menu == MENU_DASHBOARD:
         "📜 Riwayat / History Update"
     ])
 
-    # 1. Query terdistribusi dengan pengurutan utama berdasarkan LOKASI secara alfabetis
+    # 1. Query terdistribusi menyertakan COALESCE untuk tanggal
     query_view = """
         WITH spk_totals AS (
             SELECT 
@@ -338,6 +351,7 @@ if menu == MENU_DASHBOARD:
                 foto_1,
                 foto_2,
                 waktu_input,
+                tanggal,  -- Kolom tanggal laporan
                 REGEXP_REPLACE(LOWER(TRIM(no_spk)), '\\s+', ' ', 'g') AS clean_no_spk,
                 REGEXP_REPLACE(LOWER(TRIM(jenis_pekerjaan)), '\\s+', ' ', 'g') AS clean_jenis_pekerjaan
             FROM laporan_mingguan
@@ -360,6 +374,7 @@ if menu == MENU_DASHBOARD:
             COALESCE(l.progress_minggu_lalu, 0) AS progress_minggu_lalu,
             COALESCE(l.progress_minggu_ini, 0) AS progress_minggu_ini,
             (COALESCE(l.progress_minggu_ini, 0) - COALESCE(l.progress_minggu_lalu, 0)) AS selisih_varian,
+            COALESCE(l.tanggal, l.waktu_input::date) AS tanggal_update,  -- Ambil tanggal
             l.catatan AS catatan,
             l.foto_1 AS foto_1,
             l.foto_2 AS foto_2
@@ -382,14 +397,13 @@ if menu == MENU_DASHBOARD:
             st.error(f"Error membaca data dashboard: {e}")
             df_all = pd.DataFrame()
 
-    # 2. Fungsi Format Grouped Excel dengan Urutan Lokasi Terkumpul Rapi
+    # 2. Format Grouped Excel dengan Tanggal Update
     def format_grouped_dashboard_df(df_input):
         if df_input.empty:
             return pd.DataFrame()
 
-        # SORTING UTAMA: Wajib mengurutkan Lokasi dulu, lalu No SPK, lalu Master ID
         df_sorted = df_input.sort_values(
-            by=['lokasi', 'no_spk', 'master_id'],
+            by=['master_id', 'lokasi', 'no_spk'],
             ascending=[True, True, True]
         ).reset_index(drop=True)
 
@@ -403,8 +417,6 @@ if menu == MENU_DASHBOARD:
 
         last_spk = None
 
-        # Pengosongan nilai (grouping visual) HANYA dilakukan pada atribut SPK,
-        # sedangkan kolom 'Lokasi' TETAP ditampilkan di setiap baris agar pengurutan tidak rusak.
         for _, row in df_sorted.iterrows():
             current_spk = row['no_spk']
             if current_spk != last_spk:
@@ -423,19 +435,28 @@ if menu == MENU_DASHBOARD:
         df_formatted['Kontraktor'] = kontraktor_list
         df_formatted['Nilai SPK Utama (Rp)'] = nilai_spk_list
         df_formatted['Unit / Wilayah'] = unit_list
-        df_formatted['Lokasi'] = df_sorted['lokasi']  # Nilai Lokasi tetap utuh di setiap baris
+        df_formatted['Lokasi'] = df_sorted['lokasi']
         df_formatted['Jenis Pekerjaan'] = df_sorted['jenis_pekerjaan']
         df_formatted['Jumlah'] = df_sorted['jumlah']
         df_formatted['Nilai Pekerjaan (Rp)'] = df_sorted['nilai_pekerjaan']
         df_formatted['Progress Minggu Lalu (%)'] = df_sorted['progress_minggu_lalu']
         df_formatted['Progress Minggu Ini (%)'] = df_sorted['progress_minggu_ini']
         df_formatted['Selisih / Varian (%)'] = df_sorted['selisih_varian']
-        df_formatted['Catatan Pekerjaan Terbaru'] = df_sorted['catatan']
+        
+        # Format Tanggal Update
+        df_formatted['Tanggal Update'] = pd.to_datetime(df_sorted['tanggal_update'], errors='coerce').dt.date
+        
+        df_formatted['Catatan Pekerjaan Terbaru'] = (
+        df_sorted['catatan']
+        .fillna('')
+        .replace(['nan', 'None', 'NaN'], '')
+    )
         df_formatted['Pratinjau Foto 1'] = df_sorted['foto_1']
         df_formatted['Pratinjau Foto 2'] = df_sorted['foto_2']
 
         return df_formatted
-    # 3. Render tabel dengan format Grouped Excel
+
+    # 3. Render Tabel Dashboard dengan DateColumn
     def render_dashboard_table(df_raw, tab_key_prefix):
         if df_raw.empty:
             st.info("💡 Belum ada data progress untuk wilayah/kategori ini.")
@@ -443,7 +464,7 @@ if menu == MENU_DASHBOARD:
 
         df_display = format_grouped_dashboard_df(df_raw)
 
-        st.caption("💡 **Tampilan Grouped Excel**: Nilai SPK Utama & Kontraktor hanya muncul di baris pertama tiap SPK. Nilai SPK Utama terhitung otomatis dari total Rincian Pekerjaan.")
+        st.caption("💡 **Tampilan Grouped Excel**: Nilai SPK Utama & Kontraktor hanya muncul di baris pertama tiap SPK. Anda dapat mengedit Tanggal Update, Progress, dan Catatan langsung di bawah ini.")
 
         editor_key = f"editor_{tab_key_prefix}"
         edited_df = st.data_editor(
@@ -455,15 +476,22 @@ if menu == MENU_DASHBOARD:
                 "real_id": None,
                 "Nomor SPK": st.column_config.TextColumn("Nomor SPK", disabled=True),
                 "Kontraktor": st.column_config.TextColumn("Kontraktor", disabled=True),
-                "Nilai SPK Utama (Rp)": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %'d", disabled=True),
+                "Nilai SPK Utama (Rp)": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %',.2f", disabled=True),
                 "Unit / Wilayah": st.column_config.TextColumn("Unit / Wilayah", disabled=True),
                 "Lokasi": st.column_config.TextColumn("Lokasi", disabled=True),
                 "Jenis Pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan", disabled=True),
                 "Jumlah": st.column_config.NumberColumn("Jumlah", format="%d", disabled=True),
-                "Nilai Pekerjaan (Rp)": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %'d", disabled=True),
-                "Progress Minggu Lalu (%)": st.column_config.NumberColumn("Progress Minggu Lalu (%)", format="%.2f %%", disabled=True),
+                "Nilai Pekerjaan (Rp)": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %',.2f", disabled=True),
+                "Progress Minggu Lalu (%)": st.column_config.NumberColumn("Progress Minggu Lalu (%)", format="%.2f %%", min_value=0.0, 
+    max_value=100.0, 
+    step=0.5
+),
                 "Progress Minggu Ini (%)": st.column_config.NumberColumn("Progress Minggu Ini (%)", format="%.2f %%"),
                 "Selisih / Varian (%)": st.column_config.NumberColumn("Selisih / Varian (%)", format="%.2f %%", disabled=True),
+                
+                # --- KOLOM TANGGAL (INTERAKTIF & BISA DIEDIT VIA CALENDAR) ---
+                "Tanggal Update": st.column_config.DateColumn("Tanggal Update", format="DD/MM/YYYY"),
+                
                 "Catatan Pekerjaan Terbaru": st.column_config.TextColumn("Catatan Pekerjaan Terbaru"),
                 "Pratinjau Foto 1": st.column_config.ImageColumn("Pratinjau Foto 1"),
                 "Pratinjau Foto 2": st.column_config.ImageColumn("Pratinjau Foto 2"),
@@ -471,21 +499,77 @@ if menu == MENU_DASHBOARD:
             key=editor_key
         )
 
-        if st.button("💾 Simpan Perubahan Data", key=f"btn_save_{tab_key_prefix}"):
-            with get_db_connection() as conn:
-                cursor = conn.cursor()
-                for idx, row in edited_df.iterrows():
-                    real_id = row.get('real_id')
-                    if pd.notna(real_id) and str(real_id).strip() != "":
-                        cursor.execute("""
-                            UPDATE laporan_mingguan
-                            SET progress_minggu_ini = %s, catatan = %s
-                            WHERE id = %s
-                        """, (row.get('Progress Minggu Ini (%)'), row.get('Catatan Pekerjaan Terbaru'), int(real_id)))
-                conn.commit()
+        if st.button("💾 Simpan Perubahan Data", key=f"btn_save_{tab_key_prefix}", type="primary"):
+            try:
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    
+                    # Variabel penampung header SPK untuk mengisi baris baru (forward-fill)
+                    current_spk = ""
+                    current_kontraktor = ""
+                    current_unit = ""
+                    current_lokasi = ""
 
-            st.success("✅ Perubahan data berhasil disimpan!")
-            st.rerun()
+                    for idx, row in edited_df.iterrows():
+                        if str(row.get('Nomor SPK', '') or '').strip() != "":
+                            current_spk = str(row['Nomor SPK']).strip()
+                        if str(row.get('Kontraktor', '') or '').strip() != "":
+                            current_kontraktor = str(row['Kontraktor']).strip()
+                        if str(row.get('Unit / Wilayah', '') or '').strip() != "":
+                            current_unit = str(row['Unit / Wilayah']).strip()
+                        if str(row.get('Lokasi', '') or '').strip() != "":
+                            current_lokasi = str(row['Lokasi']).strip()
+
+                        real_id = row.get('real_id')
+                        prog_lalu = float(row.get('Progress Minggu Lalu (%)', 0.0) or 0.0)
+                        prog_ini = float(row.get('Progress Minggu Ini (%)', 0.0) or 0.0)
+                        tgl_val = row.get('Tanggal Update')
+                        tgl_str = tgl_val.strftime('%Y-%m-%d') if pd.notnull(tgl_val) and str(tgl_val).strip() != "" else None
+                        catatan_val = str(row.get('Catatan Pekerjaan Terbaru', '') or '').strip()
+                        jenis_pekerjaan = str(row.get('Jenis Pekerjaan', '') or '').strip()
+
+                        # Jika data laporan sudah ada sebelumnya (UPDATE)
+                        if pd.notna(real_id) and str(real_id).strip() != "":
+                            cursor.execute("""
+                                UPDATE laporan_mingguan
+                                SET progress_minggu_lalu = %s,
+                                    progress_minggu_ini = %s,
+                                    tanggal = %s,
+                                    catatan = %s
+                                WHERE id = %s
+                            """, (
+                                prog_lalu,
+                                prog_ini,
+                                tgl_str,
+                                catatan_val,
+                                int(real_id)
+                            ))
+                        # Jika baris laporan belum pernah diinput di database (INSERT baris baru)
+                        elif jenis_pekerjaan != "":
+                            cursor.execute("""
+                                INSERT INTO laporan_mingguan (
+                                    no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan,
+                                    progress_minggu_lalu, progress_minggu_ini, tanggal, catatan
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """, (
+                                current_spk,
+                                jenis_pekerjaan,
+                                current_kontraktor,
+                                current_unit,
+                                int(row.get('Jumlah', 1) or 1),
+                                float(row.get('Nilai Pekerjaan (Rp)', 0.0) or 0.0),
+                                prog_lalu,
+                                prog_ini,
+                                tgl_str,
+                                catatan_val
+                            ))
+
+                    conn.commit()
+
+                st.success("✅ Perubahan progress minggu lalu, minggu ini, dan tanggal berhasil disimpan!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"⚠️ Gagal menyimpan perubahan: {e}")
 
         st.markdown("---")
         st.subheader("📥 Export & Download Laporan")
@@ -570,9 +654,9 @@ if menu == MENU_DASHBOARD:
                     st.success("Seluruh data riwayat berhasil dibersihkan!")
                     st.rerun()
 
-# ---------------------------------------------------------
+# =========================================================
 # MENU 2: INPUT PROGRESS
-# ---------------------------------------------------------
+# =========================================================
 elif menu == MENU_INPUT:
     st.title("📝 Input Laporan Progress Mingguan Berdasarkan SPK")
     st.markdown("---")
@@ -587,7 +671,7 @@ elif menu == MENU_INPUT:
 
     def render_input_form(df_master_wilayah, tab_key_prefix):
         if df_master_wilayah.empty:
-            st.info("💡 Belum ada data master pekerjaan terdaftar untuk wilayah ini. Silakan daftarkan SPK terlebih dahulu di menu Kelola Master SPK.")
+            st.info("💡 Belum ada data master pekerjaan terdaftar untuk wilayah ini.")
             return
 
         list_spk_unique = sorted(df_master_wilayah['no_spk'].dropna().unique().tolist())
@@ -598,7 +682,6 @@ elif menu == MENU_INPUT:
         )
 
         df_spk_filtered = df_master_wilayah[df_master_wilayah['no_spk'] == selected_spk_no]
-
         list_pekerjaan = df_spk_filtered['jenis_pekerjaan'].dropna().unique().tolist()
         selected_pekerjaan = st.selectbox(
             "Pilih Jenis Pekerjaan (Tergroup berdasarkan SPK):",
@@ -616,13 +699,12 @@ elif menu == MENU_INPUT:
 
         st.markdown(f"""
 📌 **Detail SPK Dipilih:**
-
 * **Nomor SPK:** {spk_data_selected['no_spk']}
-* **Kontraktor:** {spk_data_selected['kontraktor']}
-* **Jenis Pekerjaan:** {spk_data_selected['jenis_pekerjaan']}
-* **Unit/Wilayah:** {spk_data_selected['unit']}
+* **Kontraktor:** {spk_data_selected.get('kontraktor', '-')}
+* **Jenis Pekerjaan:** {spk_data_selected.get('jenis_pekerjaan', '-')}
+* **Unit/Wilayah:** {spk_data_selected.get('unit', '-')}
 * **Lokasi:** {spk_data_selected.get('lokasi', '-')}
-* **Jumlah:** {spk_data_selected['jumlah']}
+* **Jumlah:** {spk_data_selected.get('jumlah', 1)}
 * **Nilai Kontrak:** {nilai_formatted}
 """)
 
@@ -652,8 +734,13 @@ elif menu == MENU_INPUT:
                     st.image(existing_foto_2, caption="Foto Dokumentasi 2 (Minggu Lalu)", use_container_width=True)
 
         with st.form(f"form_input_week_{tab_key_prefix}", clear_on_submit=False):
+            tgl_laporan = st.date_input(
+                "Tanggal Laporan",
+                value=datetime.now().date(),
+                key=f"input_tgl_{tab_key_prefix}"
+            )
+
             col1, col2 = st.columns(2)
-            
             with col1:
                 st.subheader("📝 Progress Minggu Ini")
                 prog_ini = st.number_input(
@@ -690,105 +777,75 @@ elif menu == MENU_INPUT:
 
                     penambahan_week = prog_ini - prog_terakhir
 
-                    no_spk_clean = str(spk_data_selected['no_spk']).strip()
-                    jenis_clean = str(spk_data_selected['jenis_pekerjaan']).strip()
-                    kontraktor_clean = str(spk_data_selected['kontraktor']).strip()
-                    unit_clean = str(spk_data_selected['unit']).strip()
+                    try:
+                        with get_db_connection() as conn:
+                            cursor = conn.cursor()
 
-                    with get_db_connection() as conn:
-                        cursor = conn.cursor()
-                        
-                        # 1. Hapus laporan lama jika ada untuk SPK & Jenis Pekerjaan ini
-                        cursor.execute(
-                            "DELETE FROM laporan_mingguan WHERE TRIM(LOWER(no_spk))=%s AND TRIM(LOWER(jenis_pekerjaan))=%s", 
-                            (no_spk_clean.lower(), jenis_clean.lower())
-                        )
-                        
-                        # 2. INSERT Laporan Mingguan (Pastikan ada 11 buah %s sesuai 11 nilai variabel)
-                        sql_insert_laporan = """
-                            INSERT INTO laporan_mingguan (
-                                no_spk, 
-                                jenis_pekerjaan, 
-                                kontraktor, 
-                                unit, 
-                                jumlah, 
-                                nilai_pekerjaan, 
-                                progress_minggu_lalu, 
-                                progress_minggu_ini, 
-                                catatan, 
-                                foto_1, 
-                                foto_2, 
-                                waktu_input
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                        """
-                        
-                        cursor.execute(sql_insert_laporan, (
-                            no_spk_clean,
-                            jenis_clean,
-                            kontraktor_clean,
-                            unit_clean,
-                            int(spk_data_selected['jumlah'] or 1),
-                            float(spk_data_selected['nilai_pekerjaan'] or 0.0),
-                            prog_terakhir,
-                            prog_ini,
-                            catatan_lap,
-                            path_f1_final,
-                            path_f2_final
-                        ))
-                        
-                        # 3. INSERT History Progress (Pastikan ada 10 buah %s sesuai 10 nilai variabel)
-                        sql_insert_history = """
-                            INSERT INTO history_progress (
-                                no_spk, 
-                                jenis_pekerjaan, 
-                                kontraktor, 
-                                unit, 
-                                progress_minggu_lalu, 
-                                progress_minggu_ini, 
-                                progres_penambahan, 
-                                catatan, 
-                                foto_1, 
-                                foto_2, 
-                                waktu_input
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                        """
-                        
-                        cursor.execute(sql_insert_history, (
-                            no_spk_clean,
-                            jenis_clean,
-                            kontraktor_clean,
-                            unit_clean,
-                            prog_terakhir,
-                            prog_ini,
-                            penambahan_week,
-                            catatan_lap,
-                            path_f1_final,
-                            path_f2_final
-                        ))
-                        
-                        conn.commit()
-                    st.success(f"✅ Laporan progress untuk SPK {no_spk_clean} berhasil disimpan!")
-                    st.rerun()
+                            # 1. Insert ke laporan_mingguan
+                            cursor.execute("""
+                                INSERT INTO laporan_mingguan (
+                                    tanggal, no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan,
+                                    progress_minggu_lalu, progress_minggu_ini, catatan, foto_1, foto_2
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """, (
+                                tgl_laporan,
+                                str(spk_data_selected['no_spk']).strip(),
+                                str(spk_data_selected['jenis_pekerjaan']).strip(),
+                                str(spk_data_selected['kontraktor']).strip(),
+                                str(spk_data_selected['unit']).strip(),
+                                int(spk_data_selected.get('jumlah', 1)),
+                                float(spk_data_selected.get('nilai_pekerjaan', 0)),
+                                prog_terakhir,
+                                prog_ini,
+                                catatan_lap,
+                                path_f1_final,
+                                path_f2_final
+                            ))
 
+                            # 2. Insert Log ke history_progress
+                            cursor.execute("""
+                                INSERT INTO history_progress (
+                                    tanggal, no_spk, jenis_pekerjaan, kontraktor, unit,
+                                    progress_minggu_lalu, progress_minggu_ini, progres_penambahan,
+                                    catatan, foto_1, foto_2
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """, (
+                                tgl_laporan,
+                                str(spk_data_selected['no_spk']).strip(),
+                                str(spk_data_selected['jenis_pekerjaan']).strip(),
+                                str(spk_data_selected['kontraktor']).strip(),
+                                str(spk_data_selected['unit']).strip(),
+                                prog_terakhir,
+                                prog_ini,
+                                penambahan_week,
+                                catatan_lap,
+                                path_f1_final,
+                                path_f2_final
+                            ))
+
+                            conn.commit()
+
+                        st.success("🎉 Laporan progress mingguan berhasil disimpan!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"⚠️ Gagal menyimpan ke database: {e}")
+
+    # --- PEMANGGILAN TAB HARUS SEJAJAR DENGAN 'def render_input_form' ---
     with tab_i_bangka:
-        st.subheader("🏝 Input Progress - Wilayah Bangka")
-        if df_master_all.empty:
-            df_bangka_master = pd.DataFrame()
-        else:
-            df_bangka_master = df_master_all[df_master_all['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)]
-        render_input_form(df_bangka_master, "bangka")
+        st.subheader("🏝️ Input Progress - Wilayah Bangka")
+        if not df_master_all.empty:
+            df_m_bangka = df_master_all[df_master_all['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)]
+            render_input_form(df_m_bangka, "in_bangka")
 
     with tab_i_belitung:
         st.subheader("🏖️ Input Progress - Wilayah Belitung")
-        if df_master_all.empty:
-            df_belitung_master = pd.DataFrame()
-        else:
+        if not df_master_all.empty:
             pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
-            df_belitung_master = df_master_all[
+            df_m_belitung = df_master_all[
                 df_master_all['unit'].astype(str).str.contains(pola_belitung, case=False, na=False) |
                 (~df_master_all['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
             ]
-            render_input_form(df_belitung_master, "belitung")  
+            render_input_form(df_m_belitung, "in_belitung")  
 
 # =========================================================
 # HALAMAN: KELOLA MASTER DATA PEKERJAAN / SPK
