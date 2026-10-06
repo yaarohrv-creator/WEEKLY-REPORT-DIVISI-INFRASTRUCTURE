@@ -672,7 +672,14 @@ elif menu == MENU_INPUT:
         "🏝️ Input Progress Bangka", 
         "🏖️ Input Progress Belitung"
     ])
-
+def is_valid_image(img_val):
+    if img_val is None:
+        return False
+    if pd.isna(img_val):
+        return False
+    if isinstance(img_val, str) and not img_val.strip():
+        return False
+    return True
     def render_input_form(df_master_wilayah, tab_key_prefix):
         if df_master_wilayah.empty:
             st.info("💡 Belum ada data master pekerjaan terdaftar untuk wilayah ini.")
