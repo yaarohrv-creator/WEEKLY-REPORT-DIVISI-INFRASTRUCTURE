@@ -754,20 +754,26 @@ elif menu == MENU_INPUT:
                 existing_foto_1 = existing_prog_df.iloc[0]['foto_1']
                 existing_foto_2 = existing_prog_df.iloc[0]['foto_2']
 
-        # Tampilkan pratinjau jika minimal salah satu foto valid
-        if is_valid_image_url(existing_foto_1) or is_valid_image_url(existing_foto_2):
-            st.markdown("***📷 Pratinjau Foto Dokumentasi Terakhir:***")
+        # Tentukan sumber gambar: Cek apakah ada upload baru, jika tidak gunakan foto lama dari DB
+        preview_1 = f_upload_1 if ('f_upload_1' in locals() and f_upload_1 is not None) else existing_foto_1
+        preview_2 = f_upload_2 if ('f_upload_2' in locals() and f_upload_2 is not None) else existing_foto_2
+
+        # Tampilkan pratinjau jika ada foto yang tersedia
+        if preview_1 or preview_2:
+            st.markdown("***📷 Pratinjau Foto Dokumentasi:***")
             c_img1, c_img2 = st.columns(2)
 
             with c_img1:
-                if is_valid_image_url(existing_foto_1):
-                    st.image(str(existing_foto_1), caption="Foto Dokumentasi 1 (Minggu Lalu)", use_container_width=True)
+                if preview_1:
+                    cap_1 = "Foto Baru (Belum Disimpan)" if ('f_upload_1' in locals() and f_upload_1) else "Foto Dokumentasi 1 (Minggu Lalu)"
+                    st.image(preview_1, caption=cap_1, use_container_width=True)
                 else:
                     st.info("📷 Foto Dokumentasi 1 belum tersedia.")
 
             with c_img2:
-                if is_valid_image_url(existing_foto_2):
-                    st.image(str(existing_foto_2), caption="Foto Dokumentasi 2 (Minggu Lalu)", use_container_width=True)
+                if preview_2:
+                    cap_2 = "Foto Baru (Belum Disimpan)" if ('f_upload_2' in locals() and f_upload_2) else "Foto Dokumentasi 2 (Minggu Lalu)"
+                    st.image(preview_2, caption=cap_2, use_container_width=True)
                 else:
                     st.info("📷 Foto Dokumentasi 2 belum tersedia.")
 
