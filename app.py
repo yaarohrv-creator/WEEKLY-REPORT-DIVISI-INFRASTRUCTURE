@@ -672,6 +672,7 @@ elif menu == MENU_INPUT:
         "🏝️ Input Progress Bangka", 
         "🏖️ Input Progress Belitung"
     ])
+
 def is_valid_image(img_val):
     if img_val is None:
         return False
