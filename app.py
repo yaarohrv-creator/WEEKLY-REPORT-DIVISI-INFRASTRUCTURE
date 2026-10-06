@@ -745,7 +745,7 @@ elif menu == MENU_INPUT:
         existing_foto_2 = None
 
         with get_db_connection() as conn:
-            query_last = "SELECT progress_minggu_ini, catatan, foto_1, foto_2 FROM laporan_mingguan WHERE TRIM(LOWER(no_spk))=%s AND TRIM(LOWER(jenis_pekerjaan))=%s"
+            query_last = "SELECT progress_minggu_ini, catatan, foto_1, foto_2 FROM laporan_mingguan WHERE TRIM(LOWER(no_spk))=%s AND TRIM(LOWER(jenis_pekerjaan))=%s ORDER BY id DESC LIMIT 1"
             existing_prog_df = pd.read_sql_query(query_last, conn, params=(str(spk_data_selected['no_spk']).strip().lower(), str(spk_data_selected['jenis_pekerjaan']).strip().lower()))
 
             if not existing_prog_df.empty:
@@ -754,25 +754,32 @@ elif menu == MENU_INPUT:
                 existing_foto_1 = existing_prog_df.iloc[0]['foto_1']
                 existing_foto_2 = existing_prog_df.iloc[0]['foto_2']
 
-        # Tentukan sumber gambar: Cek apakah ada upload baru, jika tidak gunakan foto lama dari DB
-        preview_1 = f_upload_1 if ('f_upload_1' in locals() and f_upload_1 is not None) else existing_foto_1
-        preview_2 = f_upload_2 if ('f_upload_2' in locals() and f_upload_2 is not None) else existing_foto_2
+        # Ambil file unggahan baru dari session_state jika pengguna memilih file baru
+        key_f1 = f"f1_{tab_key_prefix}"
+        key_f2 = f"f2_{tab_key_prefix}"
 
-        # Tampilkan pratinjau jika ada foto yang tersedia
+        file_baru_1 = st.session_state.get(key_f1)
+        file_baru_2 = st.session_state.get(key_f2)
+
+        # Tentukan gambar mana yang ditampilkan (Utamakan file baru dari uploader)
+        preview_1 = file_baru_1 if file_baru_1 is not None else existing_foto_1
+        preview_2 = file_baru_2 if file_baru_2 is not None else existing_foto_2
+
+        # Tampilkan pratinjau foto
         if preview_1 or preview_2:
             st.markdown("***📷 Pratinjau Foto Dokumentasi:***")
             c_img1, c_img2 = st.columns(2)
 
             with c_img1:
                 if preview_1:
-                    cap_1 = "Foto Baru (Belum Disimpan)" if ('f_upload_1' in locals() and f_upload_1) else "Foto Dokumentasi 1 (Minggu Lalu)"
+                    cap_1 = "🔴 Foto Baru (Belum Disimpan)" if file_baru_1 else "Foto Dokumentasi 1 (Minggu Lalu)"
                     st.image(preview_1, caption=cap_1, use_container_width=True)
                 else:
                     st.info("📷 Foto Dokumentasi 1 belum tersedia.")
 
             with c_img2:
                 if preview_2:
-                    cap_2 = "Foto Baru (Belum Disimpan)" if ('f_upload_2' in locals() and f_upload_2) else "Foto Dokumentasi 2 (Minggu Lalu)"
+                    cap_2 = "🔴 Foto Baru (Belum Disimpan)" if file_baru_2 else "Foto Dokumentasi 2 (Minggu Lalu)"
                     st.image(preview_2, caption=cap_2, use_container_width=True)
                 else:
                     st.info("📷 Foto Dokumentasi 2 belum tersedia.")
