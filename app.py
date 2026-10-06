@@ -753,7 +753,6 @@ elif menu == MENU_INPUT:
                 catatan_terakhir = existing_prog_df.iloc[0]['catatan'] or ""
                 existing_foto_1 = existing_prog_df.iloc[0]['foto_1']
                 existing_foto_2 = existing_prog_df.iloc[0]['foto_2']
-
         # Tampilkan pratinjau jika minimal salah satu foto valid
 if is_valid_image_url(existing_foto_1) or is_valid_image_url(existing_foto_2):
     st.markdown("**📷 Pratinjau Foto Dokumentasi Terakhir:**")
