@@ -722,10 +722,10 @@ elif menu == MENU_INPUT:
             existing_prog_df = pd.read_sql_query(query_last, conn, params=(str(spk_data_selected['no_spk']).strip().lower(), str(spk_data_selected['jenis_pekerjaan']).strip().lower()))
             
             if not existing_prog_df.empty:
-                prog_terakhir = float(existing_prog_df.iloc[0]['progress_minggu_ini'] or 0.0)
-                catatan_terakhir = existing_prog_df.iloc[0]['catatan'] or ""
-                existing_foto_1 = existing_prog_df.iloc[0]['foto_1']
-                existing_foto_2 = existing_prog_df.iloc[0]['foto_2']
+                prog_terakhir = float(existing_prog_df.at[0, 'progress_minggu_ini'] or 0.0)
+                catatan_terakhir = existing_prog_df.at[0, 'catatan'] or ""
+                existing_foto_1 = existing_prog_df.at[0, 'foto_1']
+                existing_foto_2 = existing_prog_df.at[0, 'foto_2']
 
                 # --- PRATINJAU FOTO DOKUMENTASI TERAKHIR (AMAN DARI ERROR) ---
                 if is_valid_image(existing_foto_1) or is_valid_image(existing_foto_2):
