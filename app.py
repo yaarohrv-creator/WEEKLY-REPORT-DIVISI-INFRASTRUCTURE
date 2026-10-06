@@ -743,32 +743,33 @@ elif menu == MENU_INPUT:
         catatan_terakhir = ""
         existing_foto_1 = None
         existing_foto_2 = None
-        
+
         with get_db_connection() as conn:
             query_last = "SELECT progress_minggu_ini, catatan, foto_1, foto_2 FROM laporan_mingguan WHERE TRIM(LOWER(no_spk))=%s AND TRIM(LOWER(jenis_pekerjaan))=%s"
             existing_prog_df = pd.read_sql_query(query_last, conn, params=(str(spk_data_selected['no_spk']).strip().lower(), str(spk_data_selected['jenis_pekerjaan']).strip().lower()))
-            
+
             if not existing_prog_df.empty:
                 prog_terakhir = float(existing_prog_df.iloc[0]['progress_minggu_ini'] or 0.0)
                 catatan_terakhir = existing_prog_df.iloc[0]['catatan'] or ""
                 existing_foto_1 = existing_prog_df.iloc[0]['foto_1']
                 existing_foto_2 = existing_prog_df.iloc[0]['foto_2']
+
         # Tampilkan pratinjau jika minimal salah satu foto valid
-if is_valid_image_url(existing_foto_1) or is_valid_image_url(existing_foto_2):
-    st.markdown("**📷 Pratinjau Foto Dokumentasi Terakhir:**")
-    c_img1, c_img2 = st.columns(2)
-    
-    with c_img1:
-        if is_valid_image_url(existing_foto_1):
-            st.image(str(existing_foto_1), caption="Foto Dokumentasi 1 (Minggu Lalu)", use_container_width=True)
-        else:
-            st.info("📷 Foto Dokumentasi 1 belum tersedia.")
-            
-    with c_img2:
-        if is_valid_image_url(existing_foto_2):
-            st.image(str(existing_foto_2), caption="Foto Dokumentasi 2 (Minggu Lalu)", use_container_width=True)
-        else:
-            st.info("📷 Foto Dokumentasi 2 belum tersedia.")
+        if is_valid_image_url(existing_foto_1) or is_valid_image_url(existing_foto_2):
+            st.markdown("***📷 Pratinjau Foto Dokumentasi Terakhir:***")
+            c_img1, c_img2 = st.columns(2)
+
+            with c_img1:
+                if is_valid_image_url(existing_foto_1):
+                    st.image(str(existing_foto_1), caption="Foto Dokumentasi 1 (Minggu Lalu)", use_container_width=True)
+                else:
+                    st.info("📷 Foto Dokumentasi 1 belum tersedia.")
+
+            with c_img2:
+                if is_valid_image_url(existing_foto_2):
+                    st.image(str(existing_foto_2), caption="Foto Dokumentasi 2 (Minggu Lalu)", use_container_width=True)
+                else:
+                    st.info("📷 Foto Dokumentasi 2 belum tersedia.")
 
         with st.form(f"form_input_week_{tab_key_prefix}", clear_on_submit=False):
             tgl_laporan = st.date_input(
