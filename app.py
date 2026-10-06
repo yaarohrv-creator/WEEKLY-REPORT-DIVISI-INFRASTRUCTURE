@@ -735,22 +735,21 @@ elif menu == MENU_INPUT:
             
             col_in2, col_in3 = st.columns(2)
 
-with col_in2:
-    prog_ini = st.number_input(
-        "Progress Minggu Ini (%)",
-        min_value=0.0,
-        max_value=100.0,
-        value=default_prog_ini,
-        step=0.5,
-        key=f"in_prog_ini_{tab_key_prefix}"
-    )
-
-with col_in3:
-    tgl_update = st.date_input(
-        "Tanggal Update Progress:",
-        value=datetime.today(),
-        key=f"in_tgl_{tab_key_prefix}"
-    )
+            with col_in2:
+                prog_ini = st.number_input(
+                    "Progress Minggu Ini (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=default_prog_ini,
+                    step=0.5,
+                    key=f"in_prog_ini_{tab_key_prefix}"
+                )
+            with col_in3:
+                tgl_update = st.date_input(
+                    "Tanggal Update Progress:",
+                    value=datetime.today(),
+                    key=f"in_tgl_{tab_key_prefix}"
+                )
 
             catatan_input = st.text_area(
                 "Catatan / Kendala / Keterangan Progress:", 
