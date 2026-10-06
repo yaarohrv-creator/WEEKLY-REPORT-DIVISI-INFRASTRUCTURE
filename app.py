@@ -797,7 +797,9 @@ elif menu == MENU_INPUT:
                 f_upload_2 = st.file_uploader("Upload Foto 2", type=["jpg", "jpeg", "png"], key=f"f2_{tab_key_prefix}")
             
             submit_btn = st.form_submit_button("💾 Simpan Laporan Minggu Ini")
-            
+            st.success("Laporan berhasil disimpan!")
+                st.cache_data.clear()
+                st.rerun()
             if submit_btn:
                 if prog_ini < prog_terakhir:
                     st.error("⚠️ Progress minggu ini tidak boleh lebih kecil dari minggu lalu!")
@@ -863,13 +865,10 @@ elif menu == MENU_INPUT:
 
                             conn.commit()
 
-                        # --- TARUH DI SINI (SETELAH PROCESS DATABASE SELESAI) ---
-                st.success("Laporan berhasil disimpan!")
-                st.cache_data.clear()
-                st.rerun()
-
-            except Exception as e:
-                st.error(f"Gagal menyimpan data: {e}")
+                        st.success("🎉 Laporan progress mingguan berhasil disimpan!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"⚠️ Gagal menyimpan ke database: {e}")
 
     # --- PEMANGGILAN TAB HARUS SEJAJAR DENGAN 'def render_input_form' ---
     with tab_i_bangka:
