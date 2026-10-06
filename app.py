@@ -722,10 +722,10 @@ elif menu == MENU_INPUT:
             existing_prog_df = pd.read_sql_query(query_last, conn, params=(str(spk_data_selected['no_spk']).strip().lower(), str(spk_data_selected['jenis_pekerjaan']).strip().lower()))
             
             if not existing_prog_df.empty:
-                prog_terakhir = float(existing_prog_df.at[0, 'progress_minggu_ini'] or 0.0)
-                catatan_terakhir = existing_prog_df.at[0, 'catatan'] or ""
-                existing_foto_1 = existing_prog_df.at[0, 'foto_1']
-                existing_foto_2 = existing_prog_df.at[0, 'foto_2']
+                prog_terakhir = float(existing_prog_df['progress_minggu_ini'].iloc[0] or 0.0)
+                catatan_terakhir = existing_prog_df['catatan'].iloc[0] or ""
+                existing_foto_1 = existing_prog_df['foto_1'].iloc[0]
+                existing_foto_2 = existing_prog_df['foto_2'].iloc[0]
 
                 # --- PRATINJAU FOTO DOKUMENTASI TERAKHIR (AMAN DARI ERROR) ---
                 if is_valid_image(existing_foto_1) or is_valid_image(existing_foto_2):
@@ -735,14 +735,16 @@ elif menu == MENU_INPUT:
                     with c_img1:
                         if is_valid_image(existing_foto_1):
                             try:
-                                st.image(str(existing_foto_1).strip(), caption="Foto Dokumentasi 1 (Minggu Lalu)", use_container_width=True)
+                                img_src1 = existing_foto_1.strip() if isinstance(existing_foto_1, str) else existing_foto_1
+                                st.image(img_src1, caption="Foto Dokumentasi 1 (Minggu Lalu)", use_column_width=True)
                             except Exception:
                                 st.warning("⚠️ Tidak dapat memuat Foto 1.")
             
                     with c_img2:
                         if is_valid_image(existing_foto_2):
                             try:
-                                st.image(str(existing_foto_2).strip(), caption="Foto Dokumentasi 2 (Minggu Lalu)", use_container_width=True)
+                                img_src2 = existing_foto_2.strip() if isinstance(existing_foto_2, str) else existing_foto_2
+                                st.image(img_src2, caption="Foto Dokumentasi 2 (Minggu Lalu)", use_column_width=True)
                             except Exception:
                                 st.warning("⚠️ Tidak dapat memuat Foto 2.")
 
