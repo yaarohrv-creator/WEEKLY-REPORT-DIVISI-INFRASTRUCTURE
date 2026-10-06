@@ -46,9 +46,13 @@ if "authenticated" not in st.session_state:
 
 def check_password():
     password_benar = st.secrets.get("APP_PASSWORD", "123456")
-    if st.session_state["password_input"] == password_benar:
+    # Gunakan .get() agar aman dari KeyError
+    user_input = st.session_state.get("password_input", "")
+    
+    if user_input == password_benar:
         st.session_state["authenticated"] = True
-        del st.session_state["password_input"]
+        if "password_input" in st.session_state:
+            del st.session_state["password_input"]
     else:
         st.session_state["authenticated"] = False
         st.error("🔑 Password salah! Silakan coba lagi.")
