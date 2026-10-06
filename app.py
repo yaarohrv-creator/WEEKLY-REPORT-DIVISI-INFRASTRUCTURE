@@ -727,24 +727,24 @@ elif menu == MENU_INPUT:
                 existing_foto_1 = existing_prog_df.iloc[0]['foto_1']
                 existing_foto_2 = existing_prog_df.iloc[0]['foto_2']
 
-        # --- PRATINJAU FOTO DOKUMENTASI TERAKHIR (AMAN DARI ERROR) ---
-        if is_valid_image(existing_foto_1) or is_valid_image(existing_foto_2):
-            st.markdown("**📸 Pratinjau Foto Dokumentasi Terakhir:**")
-            c_img1, c_img2 = st.columns(2)
+                # --- PRATINJAU FOTO DOKUMENTASI TERAKHIR (AMAN DARI ERROR) ---
+                if is_valid_image(existing_foto_1) or is_valid_image(existing_foto_2):
+                    st.markdown("**📸 Pratinjau Foto Dokumentasi Terakhir:**")
+                    c_img1, c_img2 = st.columns(2)
             
-            with c_img1:
-                if is_valid_image(existing_foto_1):
-                    try:
-                        st.image(str(existing_foto_1).strip(), caption="Foto Dokumentasi 1 (Minggu Lalu)", use_container_width=True)
-                    except Exception:
-                        st.warning("⚠️ Tidak dapat memuat Foto 1.")
+                    with c_img1:
+                        if is_valid_image(existing_foto_1):
+                            try:
+                                st.image(str(existing_foto_1).strip(), caption="Foto Dokumentasi 1 (Minggu Lalu)", use_container_width=True)
+                            except Exception:
+                                st.warning("⚠️ Tidak dapat memuat Foto 1.")
             
-            with c_img2:
-                if is_valid_image(existing_foto_2):
-                    try:
-                        st.image(str(existing_foto_2).strip(), caption="Foto Dokumentasi 2 (Minggu Lalu)", use_container_width=True)
-                    except Exception:
-                        st.warning("⚠️ Tidak dapat memuat Foto 2.")
+                    with c_img2:
+                        if is_valid_image(existing_foto_2):
+                            try:
+                                st.image(str(existing_foto_2).strip(), caption="Foto Dokumentasi 2 (Minggu Lalu)", use_container_width=True)
+                            except Exception:
+                                st.warning("⚠️ Tidak dapat memuat Foto 2.")
 
         with st.form(f"form_input_week_{tab_key_prefix}", clear_on_submit=False):
             tgl_laporan = st.date_input(
