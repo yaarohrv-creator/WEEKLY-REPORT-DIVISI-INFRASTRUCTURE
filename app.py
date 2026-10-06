@@ -733,26 +733,10 @@ elif menu == MENU_INPUT:
         with st.form(f"form_input_progress_{tab_key_prefix}"):
             st.subheader("📝 Form Update Progress Minggu Ini")
             
-            col_in1, col_in2, col_in3 = st.columns(3)
+            col_in1, col_in2 = st.columns(3)
             with col_in1:
-                prog_lalu = st.number_input(
-                    "Progress Minggu Lalu (%)", 
-                    min_value=0.0, 
-                    max_value=100.0, 
-                    value=default_prog_lalu, 
-                    step=0.5,
-                    key=f"in_prog_lalu_{tab_key_prefix}"
-                )
+                progress_minggu_ini = st.number_input("Progress Minggu Ini (%)", min_value=0.0, max_value=100.0, value=100.0)
             with col_in2:
-                prog_ini = st.number_input(
-                    "Progress Minggu Ini (%)", 
-                    min_value=0.0, 
-                    max_value=100.0, 
-                    value=default_prog_ini, 
-                    step=0.5,
-                    key=f"in_prog_ini_{tab_key_prefix}"
-                )
-            with col_in3:
                 tgl_update = st.date_input(
                     "Tanggal Update Progress:", 
                     value=datetime.today(),
