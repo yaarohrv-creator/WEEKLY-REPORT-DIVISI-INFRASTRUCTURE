@@ -703,4 +703,113 @@ elif menu == MENU_INPUT:
                     """, (
                         selected_spk_no, selected_pekerjaan, spk_data_selected.get('kontraktor'),
                         spk_data_selected.get('unit'), int(spk_data_selected.get('jumlah', 1) or 1),
-                        val_num, prog_lalu, prog_ini,
+                        val_num, prog_lalu, prog_ini, catatan, url_foto1, url_foto2, tgl_input.strftime('%Y-%m-%d')
+                    ))
+
+                    # 2. Simpan ke History Progress
+                    cursor.execute("""
+                        INSERT INTO history_progress (
+                            no_spk, jenis_pekerjaan, kontraktor, unit,
+                            progress_minggu_lalu, progress_minggu_ini, progres_penambahan, catatan, foto_1, foto_2, tanggal
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        selected_spk_no, selected_pekerjaan, spk_data_selected.get('kontraktor'),
+                        spk_data_selected.get('unit'), prog_lalu, prog_ini, selisih_progres, catatan, url_foto1, url_foto2, tgl_input.strftime('%Y-%m-%d')
+                    ))
+
+                    conn.commit()
+
+                st.success(f"✅ Laporan Progress untuk SPK '{selected_spk_no}' ({selected_pekerjaan}) berhasil dikirim!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"⚠️ Gagal menyimpan laporan: {e}")
+
+    tab_i_bangka, tab_i_belitung = st.tabs([
+        "🏝️️ Input Progress Bangka", 
+        "🏖️ Input Progress Belitung"
+    ])
+
+    with tab_i_bangka:
+        if not df_master_all.empty:
+            df_m_bangka = df_master_all[df_master_all['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)]
+            render_input_form(df_m_bangka, "in_bangka")
+
+    with tab_i_belitung:
+        if not df_master_all.empty:
+            pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
+            df_m_belitung = df_master_all[
+                df_master_all['unit'].astype(str).str.contains(pola_belitung, case=False, na=False) |
+                (~df_master_all['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
+            ]
+            render_input_form(df_m_belitung, "in_belitung")
+
+# ---------------------------------------------------------
+# MENU 3: KELOLA MASTER SPK
+# ---------------------------------------------------------
+elif menu == MENU_MASTER:
+    st.title("⚙️ Kelola Master SPK & Pekerjaan")
+    st.markdown("---")
+
+    with get_db_connection() as conn:
+        df_master = pd.read_sql_query("SELECT * FROM master_spk ORDER BY id ASC", conn)
+
+    st.subheader("📋 Daftar Master SPK Aktif")
+    edited_master = st.data_editor(
+        df_master,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "id": None,
+            "no_spk": st.column_config.TextColumn("Nomor SPK", required=True),
+            "kontraktor": st.column_config.TextColumn("Nama Kontraktor"),
+            "unit": st.column_config.TextColumn("Unit / Wilayah (e.g. BANGKA / BELITUNG)"),
+            "lokasi": st.column_config.TextColumn("Lokasi Detail"),
+            "jenis_pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan", required=True),
+            "jumlah": st.column_config.NumberColumn("Jumlah Unit", min_value=1, step=1),
+            "nilai_spk_utama": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %',.2f"),
+            "nilai_pekerjaan": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %',.2f"),
+            "catatan": st.column_config.TextColumn("Catatan Master"),
+        },
+        key="master_spk_editor"
+    )
+
+    if st.button("💾 Simpan Perubahan Master SPK", type="primary"):
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                # Opsi paling stabil: Simpan ulang/update master data
+                for idx, row in edited_master.iterrows():
+                    m_id = row.get("id")
+                    no_spk = str(row.get("no_spk", "") or "").strip()
+                    jenis_pek = str(row.get("jenis_pekerjaan", "") or "").strip()
+
+                    if no_spk and jenis_pek:
+                        if pd.notna(m_id) and str(m_id).strip() != "":
+                            cursor.execute("""
+                                UPDATE master_spk SET 
+                                    no_spk = %s, kontraktor = %s, jenis_pekerjaan = %s, unit = %s, 
+                                    lokasi = %s, jumlah = %s, nilai_spk_utama = %s, nilai_pekerjaan = %s, catatan = %s
+                                WHERE id = %s
+                            """, (
+                                no_spk, str(row.get("kontraktor", "")), jenis_pek, str(row.get("unit", "")),
+                                str(row.get("lokasi", "")), int(row.get("jumlah", 1) or 1),
+                                float(row.get("nilai_spk_utama", 0.0) or 0.0), float(row.get("nilai_pekerjaan", 0.0) or 0.0),
+                                str(row.get("catatan", "")), int(m_id)
+                            ))
+                        else:
+                            cursor.execute("""
+                                INSERT INTO master_spk (no_spk, kontraktor, jenis_pekerjaan, unit, lokasi, jumlah, nilai_spk_utama, nilai_pekerjaan, catatan)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                ON CONFLICT (no_spk, jenis_pekerjaan) DO NOTHING
+                            """, (
+                                no_spk, str(row.get("kontraktor", "")), jenis_pek, str(row.get("unit", "")),
+                                str(row.get("lokasi", "")), int(row.get("jumlah", 1) or 1),
+                                float(row.get("nilai_spk_utama", 0.0) or 0.0), float(row.get("nilai_pekerjaan", 0.0) or 0.0),
+                                str(row.get("catatan", ""))
+                            ))
+                conn.commit()
+            st.success("✅ Master SPK berhasil diperbarui!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"⚠️ Gagal menyimpan master SPK: {e}")
