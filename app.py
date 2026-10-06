@@ -118,6 +118,7 @@ def init_db():
                     );
                 ''')
                 cursor.execute('ALTER TABLE laporan_mingguan ADD COLUMN IF NOT EXISTS tanggal DATE;')
+                cursor.execute('ALTER TABLE history_progress ADD COLUMN IF NOT EXISTS tanggal DATE;')
                 
                 # 3. TABEL HISTORY_PROGRESS
                 cursor.execute('''
@@ -136,7 +137,6 @@ def init_db():
                         foto_2 TEXT
                     );
                 ''')
-                cursor.execute('ALTER TABLE history_progress ADD COLUMN IF NOT EXISTS tanggal DATE;')
                 conn.commit()
     except Exception as e:
         st.error(f"⚠️ Gagal inisialisasi database: {e}")
@@ -478,13 +478,10 @@ if menu == MENU_DASHBOARD:
                 "Jenis Pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan", disabled=True),
                 "Jumlah": st.column_config.NumberColumn("Jumlah", format="%d", disabled=True),
                 "Nilai Pekerjaan (Rp)": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %',.2f", disabled=True),
-                "Progress Minggu Lalu (%)": st.column_config.NumberColumn(
-                    "Progress Minggu Lalu (%)", 
-                    format="%.2f %%", 
-                    min_value=0.0, 
-                    max_value=100.0, 
-                    step=0.5
-                ),
+                "Progress Minggu Lalu (%)": st.column_config.NumberColumn("Progress Minggu Lalu (%)", format="%.2f %%", min_value=0.0, 
+    max_value=100.0, 
+    step=0.5
+),
                 "Progress Minggu Ini (%)": st.column_config.NumberColumn("Progress Minggu Ini (%)", format="%.2f %%"),
                 "Selisih / Varian (%)": st.column_config.NumberColumn("Selisih / Varian (%)", format="%.2f %%", disabled=True),
                 
@@ -888,117 +885,295 @@ elif menu == MENU_INPUT:
             df_master_all['unit'].astype(str).str.contains(pola_belitung, case=False, na=False) |
             (~df_master_all['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
         ]
-        render_input_form(df_master_blt, "input_belitung")
+        render_input_form(df_master_blt, "input_belitung")  
 
 # =========================================================
-# MENU 3: KELOLA MASTER SPK
+# HALAMAN: KELOLA MASTER DATA PEKERJAAN / SPK
 # =========================================================
 elif menu == MENU_MASTER:
-    st.title("⚙️ Kelola Master SPK & Jenis Pekerjaan")
-    st.markdown("---")
+    st.title("⚙️ Kelola Master Data Pekerjaan / SPK")
+    
+    # Auto-check & buat kolom lokasi jika belum ada di database
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    DO $$ 
+                    BEGIN 
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_name='master_spk' AND column_name='lokasi'
+                        ) THEN 
+                            ALTER TABLE master_spk ADD COLUMN lokasi VARCHAR(255);
+                        END IF;
+                    END $$;
+                """)
+                conn.commit()
+    except Exception as e:
+        pass
+
+    tab_m_bangka, tab_m_belitung, tab_m_semua, tab_tambah = st.tabs([
+        "🌴 Master Bangka",
+        "⛵ Master Belitung",
+        "📋 Semua Master SPK",
+        "➕ Tambah SPK Baru"
+    ])
+
+    def recalculate_spk_utama_totals(conn):
+        cursor = conn.cursor()
+        query_calc = """
+            SELECT no_spk, SUM(jumlah * nilai_pekerjaan) as total_spk
+            FROM master_spk
+            WHERE no_spk IS NOT NULL AND no_spk != ''
+            GROUP BY no_spk
+        """
+        cursor.execute(query_calc)
+        totals = cursor.fetchall()
+
+        for no_spk, total_nilai in totals:
+            cursor.execute("""
+                UPDATE master_spk
+                SET nilai_spk_utama = %s
+                WHERE no_spk = %s
+            """, (total_nilai, no_spk))
+        conn.commit()
+
+    def format_grouped_excel_df(df_input):
+        df_sorted = df_input.sort_values(by=['no_spk', 'id']).reset_index(drop=True)
+        df_formatted = pd.DataFrame()
+        df_formatted['ID'] = df_sorted['id']
+        
+        nomor_spk_list = []
+        kontraktor_list = []
+        nilai_spk_list = []
+        unit_list = []
+        lokasi_list = []
+
+        last_spk = None
+
+        for _, row in df_sorted.iterrows():
+            current_spk = row['no_spk']
+            if current_spk != last_spk:
+                nomor_spk_list.append(current_spk)
+                kontraktor_list.append(row['kontraktor'])
+                nilai_spk_list.append(row['nilai_spk_utama'])
+                unit_list.append(row['unit'])
+                lokasi_list.append(row.get('lokasi', ''))
+                last_spk = current_spk
+            else:
+                nomor_spk_list.append("")
+                kontraktor_list.append("")
+                nilai_spk_list.append(None)
+                unit_list.append("")
+                lokasi_list.append("")
+
+        df_formatted['Nomor SPK'] = nomor_spk_list
+        df_formatted['Kontraktor'] = kontraktor_list
+        df_formatted['Nilai SPK Utama (Rp)'] = nilai_spk_list
+        df_formatted['Unit / Wilayah'] = unit_list
+        df_formatted['Lokasi'] = lokasi_list
+        df_formatted['Jenis Pekerjaan'] = df_sorted['jenis_pekerjaan']
+        df_formatted['Jumlah'] = df_sorted['jumlah']
+        df_formatted['Nilai Pekerjaan (Rp)'] = df_sorted['nilai_pekerjaan']
+        df_formatted['Catatan'] = df_sorted['catatan']
+
+        return df_formatted
+
+    def render_grouped_master_table(df_raw, key_prefix="master"):
+        if df_raw.empty:
+            st.info("Belum ada data master SPK.")
+            return
+
+        df_display = format_grouped_excel_df(df_raw)
+
+        st.caption("💡 **Tampilan Grouped Excel**: Nilai SPK Utama & Kontraktor hanya muncul di baris pertama tiap SPK. Nilai SPK Utama terhitung otomatis dari total Rincian Pekerjaan.")
+
+        edited_df = st.data_editor(
+            df_display,
+            column_config={
+                "ID": None,
+                "Nomor SPK": st.column_config.TextColumn("Nomor SPK", width="medium"),
+                "Kontraktor": st.column_config.TextColumn("Kontraktor", width="medium"),
+                "Nilai SPK Utama (Rp)": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %'d", disabled=True),
+                "Unit / Wilayah": st.column_config.TextColumn("Unit / Wilayah", width="small"),
+                "Lokasi": st.column_config.TextColumn("Lokasi", width="small"),
+                "Jenis Pekerjaan": st.column_config.TextColumn("Jenis Pekerjaan", width="large", required=True),
+                "Jumlah": st.column_config.NumberColumn("Jumlah", min_value=1, step=1, required=True),
+                "Nilai Pekerjaan (Rp)": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %'d", required=True),
+                "Catatan": st.column_config.TextColumn("Catatan", width="medium")
+            },
+            use_container_width=True,
+            num_rows="dynamic",
+            key=f"editor_{key_prefix}"
+        )
+
+        if st.button("💾 Simpan Perubahan Master Data", key=f"btn_save_{key_prefix}"):
+            try:
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+
+                    original_ids = set(df_raw['id'].dropna().astype(int).tolist())
+                    remaining_ids = set(edited_df['ID'].dropna().astype(int).tolist()) if 'ID' in edited_df.columns else set()
+                    ids_to_delete = list(original_ids - remaining_ids)
+
+                    if ids_to_delete:
+                        cursor.execute("DELETE FROM master_spk WHERE id = ANY(%s)", (ids_to_delete,))
+
+                    current_spk = ""
+                    current_kontraktor = ""
+                    current_unit = ""
+                    current_lokasi = ""
+
+                    for idx, row in edited_df.iterrows():
+                        if str(row.get('Nomor SPK', '')).strip() != "":
+                            current_spk = str(row['Nomor SPK']).strip()
+                            current_kontraktor = str(row['Kontraktor']).strip()
+                            current_unit = str(row['Unit / Wilayah']).strip()
+                            current_lokasi = str(row['Lokasi']).strip()
+
+                        row_id = row.get('ID')
+                        if pd.notnull(row_id) and row_id != "":
+                            cursor.execute("""
+                                UPDATE master_spk 
+                                SET no_spk=%s, kontraktor=%s, jenis_pekerjaan=%s, unit=%s, 
+                                    lokasi=%s, jumlah=%s, nilai_pekerjaan=%s, catatan=%s
+                                WHERE id=%s
+                            """, (
+                                current_spk, current_kontraktor, row['Jenis Pekerjaan'], 
+                                current_unit, current_lokasi, row['Jumlah'], 
+                                row['Nilai Pekerjaan (Rp)'], row.get('Catatan', ''),
+                                int(row_id)
+                            ))
+
+                    conn.commit()
+                    recalculate_spk_utama_totals(conn)
+
+                st.success("✅ Perubahan Master Data berhasil disimpan!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"⚠️ Gagal memperbarui data: {e}")
 
     with get_db_connection() as conn:
-        df_master = pd.read_sql_query("SELECT * FROM master_spk ORDER BY id DESC", conn)
+        df_master_all = pd.read_sql_query("SELECT * FROM master_spk ORDER BY id ASC", conn)
 
-    tab_m1, tab_m2 = st.tabs(["📋 Data Master SPK", "➕ Tambah Master SPK Baru"])
+    with tab_m_bangka:
+        st.subheader("🌴 Master SPK - Wilayah Bangka")
+        df_m_bangka = df_master_all[df_master_all['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False)]
+        render_grouped_master_table(df_m_bangka, "m_bangka")
 
-    with tab_m1:
-        st.subheader("Data Master SPK Terdaftar")
-        if not df_master.empty:
-            edited_master = st.data_editor(
-                df_master,
-                num_rows="dynamic",
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "id": None,
-                    "nilai_spk_utama": st.column_config.NumberColumn("Nilai SPK Utama (Rp)", format="Rp %',.2f"),
-                    "nilai_pekerjaan": st.column_config.NumberColumn("Nilai Pekerjaan (Rp)", format="Rp %',.2f"),
-                    "jumlah": st.column_config.NumberColumn("Jumlah", format="%d")
-                },
-                key="editor_master_spk"
-            )
+    with tab_m_belitung:
+        st.subheader("⛵ Master SPK - Wilayah Belitung")
+        pola_belitung = 'BELITUNG|BLT|BPSL|BPRE|BPT'
+        df_m_belitung = df_master_all[
+            df_master_all['unit'].astype(str).str.contains(pola_belitung, case=False, na=False) |
+            (~df_master_all['unit'].astype(str).str.contains('BANGKA|BKA', case=False, na=False))
+        ]
+        render_grouped_master_table(df_m_belitung, "m_belitung")
 
-            col_m_btn1, col_m_btn2 = st.columns([2, 1])
-            with col_m_btn1:
-                if st.button("💾 Simpan Perubahan Master", type="primary", key="btn_save_master"):
-                    try:
-                        with get_db_connection() as conn:
-                            cursor = conn.cursor()
-                            for _, row in edited_master.iterrows():
-                                m_id = row.get('id')
-                                if pd.notna(m_id):
-                                    cursor.execute("""
-                                        UPDATE master_spk 
-                                        SET no_spk = %s, kontraktor = %s, jenis_pekerjaan = %s,
-                                            unit = %s, lokasi = %s, jumlah = %s, nilai_spk_utama = %s,
-                                            nilai_pekerjaan = %s, catatan = %s
-                                        WHERE id = %s
-                                    """, (
-                                        row.get('no_spk'), row.get('kontraktor'), row.get('jenis_pekerjaan'),
-                                        row.get('unit'), row.get('lokasi'), int(row.get('jumlah', 1) or 1),
-                                        float(row.get('nilai_spk_utama', 0.0) or 0.0),
-                                        float(row.get('nilai_pekerjaan', 0.0) or 0.0),
-                                        row.get('catatan'), int(m_id)
-                                    ))
-                            conn.commit()
-                        st.success("✅ Data Master SPK berhasil diperbarui!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"⚠️️ Gagal memperbarui Master SPK: {e}")
+    with tab_m_semua:
+        st.subheader("📋 Semua Master SPK")
+        render_grouped_master_table(df_master_all, "m_semua")
 
-            with col_m_btn2:
-                id_to_del = st.selectbox("Pilih ID Master untuk Dihapus:", df_master['id'].tolist(), key="sel_del_master")
-                if st.button("🗑️ Hapus Master ID", type="secondary", key="btn_del_master"):
-                    try:
-                        with get_db_connection() as conn:
-                            cursor = conn.cursor()
-                            cursor.execute("DELETE FROM master_spk WHERE id = %s", (id_to_del,))
-                            conn.commit()
-                        st.success(f"Master SPK ID {id_to_del} berhasil dihapus!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Gagal menghapus master: {e}")
-        else:
-            st.info("Belum ada data Master SPK.")
+    with tab_tambah:
+        st.subheader("📝 Form Tambah Data Master SPK")
 
-    with tab_m2:
-        st.subheader("➕ Tambah Data Master SPK Baru")
-        with st.form("form_add_master"):
-            c_m1, c_m2 = st.columns(2)
-            with c_m1:
-                add_no_spk = st.text_input("Nomor SPK:")
-                add_kontraktor = st.text_input("Kontraktor:")
-                add_unit = st.text_input("Unit / Wilayah (contoh: BANGKA / BELITUNG):")
-                add_lokasi = st.text_input("Lokasi:")
-            with c_m2:
-                add_jenis_pekerjaan = st.text_input("Jenis Pekerjaan:")
-                add_jumlah = st.number_input("Jumlah:", min_value=1, value=1, step=1)
-                add_nilai_spk_utama = st.number_input("Nilai SPK Utama (Rp):", min_value=0.0, value=0.0, step=1000000.0)
-                add_nilai_pekerjaan = st.number_input("Nilai Pekerjaan (Rp):", min_value=0.0, value=0.0, step=500000.0)
+        # Inisialisasi session state untuk jumlah baris rincian pekerjaan
+        if "num_items_spk" not in st.session_state:
+            st.session_state["num_items_spk"] = 1
 
-            add_catatan = st.text_area("Catatan Master SPK:")
-            submit_master = st.form_submit_button("➕ Tambah Master SPK", type="primary")
+        def add_item_row():
+            st.session_state["num_items_spk"] += 1
 
-        if submit_master:
-            if not add_no_spk or not add_jenis_pekerjaan:
-                st.warning("⚠️ Nomor SPK dan Jenis Pekerjaan wajib diisi!")
+        # -------------------------------------------------------------
+        # 1. INFORMASI UTAMA SPK (HEADER)
+        # -------------------------------------------------------------
+        with st.expander("1. Informasi Utama SPK (Header)", expanded=True):
+            col_h1, col_h2 = st.columns(2)
+            with col_h1:
+                no_spk_input = st.text_input("Nomor SPK*", placeholder="048/PSM2/BPRE/BPSL/JKTO/INF/III/2026", key="add_no_spk")
+                kontraktor_input = st.text_input("Kontraktor*", placeholder="CV. SELAMAT JAYA", key="add_kontraktor")
+                catatan_header_input = st.text_area("Catatan Header", placeholder="Catatan umum SPK (opsional)", key="add_catatan_header")
+            
+            with col_h2:
+                unit_input = st.selectbox("Unit / Wilayah*", ["BANGKA", "BELITUNG"], key="add_unit")
+                lokasi_input = st.text_input("Lokasi", placeholder="BPRE", key="add_lokasi")
+
+        # -------------------------------------------------------------
+        # 2. RINCIAN JENIS PEKERJAAN & NILAI PEKERJAAN
+        # -------------------------------------------------------------
+        st.subheader("🛠️ Rincian Jenis Pekerjaan & Nilai Pekerjaan")
+        
+        items_data = []
+        for i in range(st.session_state["num_items_spk"]):
+            st.markdown(f"**Pekerjaan #{i+1}**")
+            col_i1, col_i2, col_i3 = st.columns([3, 1, 2])
+            
+            with col_i1:
+                jp = st.text_input(f"Jenis Pekerjaan #{i+1} *", placeholder="Contoh: Pekerjaan Pengecoran Jalan", key=f"jp_{i}")
+            with col_i2:
+                jml = st.number_input(f"Jumlah #{i+1}", min_value=1, value=1, step=1, key=f"jml_{i}")
+            with col_i3:
+                np = st.number_input(f"Nilai Pekerjaan #{i+1} (Rp)", min_value=0.0, step=100000.0, format="%.2f", key=f"np_{i}")
+            
+            if jp.strip():
+                items_data.append({
+                    "jenis_pekerjaan": jp.strip(),
+                    "jumlah": jml,
+                    "nilai_pekerjaan": np
+                })
+
+        # Tombol untuk menambah baris rincian pekerjaan baru secara dinamis
+        st.button("➕ Tambah Baris Pekerjaan", on_click=add_item_row, key="btn_add_row_item")
+
+        st.markdown("---")
+
+        # Tombol Eksekusi Simpan Semua Data
+        if st.button("💾 Simpan Semua Data SPK & Pekerjaan", type="primary", key="btn_save_full_spk"):
+            if not no_spk_input.strip():
+                st.error("⚠️ Nomor SPK wajib diisi!")
+            elif not kontraktor_input.strip():
+                st.error("⚠️ Nama Kontraktor wajib diisi!")
+            elif len(items_data) == 0:
+                st.error("⚠️ Minimal harus mengisi 1 Jenis Pekerjaan!")
             else:
                 try:
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
-                        cursor.execute("""
-                            INSERT INTO master_spk (
-                                no_spk, kontraktor, jenis_pekerjaan, unit, lokasi,
-                                jumlah, nilai_spk_utama, nilai_pekerjaan, catatan
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """, (
-                            add_no_spk.strip(), add_kontraktor.strip(), add_jenis_pekerjaan.strip(),
-                            add_unit.strip(), add_lokasi.strip(), add_jumlah,
-                            add_nilai_spk_utama, add_nilai_pekerjaan, add_catatan.strip()
-                        ))
+                        
+                        # Simpan setiap rincian pekerjaan ke database
+                        for item in items_data:
+                            cursor.execute("""
+                                INSERT INTO master_spk (
+                                    no_spk, kontraktor, jenis_pekerjaan, unit, lokasi, jumlah, nilai_pekerjaan, catatan
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                ON CONFLICT (no_spk, jenis_pekerjaan) 
+                                DO UPDATE SET 
+                                    kontraktor = EXCLUDED.kontraktor,
+                                    unit = EXCLUDED.unit,
+                                    lokasi = EXCLUDED.lokasi,
+                                    jumlah = EXCLUDED.jumlah,
+                                    nilai_pekerjaan = EXCLUDED.nilai_pekerjaan,
+                                    catatan = EXCLUDED.catatan;
+                            """, (
+                                no_spk_input.strip(),
+                                kontraktor_input.strip(),
+                                item["jenis_pekerjaan"],
+                                unit_input,
+                                lokasi_input.strip(),
+                                item["jumlah"],
+                                item["nilai_pekerjaan"],
+                                catatan_header_input.strip()
+                            ))
+                        
                         conn.commit()
-                    st.success("✅ Berhasil menambahkan Master SPK baru!")
+                        
+                        # Hitung ulang akumulasi total Nilai SPK Utama secara otomatis
+                        recalculate_spk_utama_totals(conn)
+
+                    # Reset baris formulir kembali ke 1 setelah berhasil disimpan
+                    st.session_state["num_items_spk"] = 1
+                    st.success(f"✅ Data SPK {no_spk_input} beserta {len(items_data)} rincian pekerjaan berhasil disimpan!")
                     st.rerun()
-                except Exception as e:
-                    st.error(f"⚠️ Gagal menambahkan Master SPK (Kemungkinan Nomor SPK + Jenis Pekerjaan sudah terdaftar): {e}")
+
+                except Exception as err:
+                    st.error(f"⚠️ Gagal menyimpan data ke database: {err}")
