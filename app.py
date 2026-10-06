@@ -24,12 +24,13 @@ cloudinary.config(
 # --- LIBRARY UNTUK MEMPROSES GAMBAR ---
 try:
     from PIL import Image as PILImage
-    from openpyxl.drawing.image import Image as OpenPyXLImage
+
     has_pil = True
 except ImportError:
-    st.error("⚠️ Library 'Pillow' belum terinstal. Gambar fisik tidak akan muncul di Excel. Silakan instal dengan perintah: pip install Pillow")
+    st.error(
+        "⚠️ Library 'Pillow' belum terinstal. Gambar fisik tidak akan muncul di Excel. Silakan instal dengan perintah: pip install Pillow"
+    )
     has_pil = False
-
 # Konfigurasi Halaman Streamlit
 st.set_page_config(page_title="Sistem Progress Proyek", layout="wide")
 
@@ -147,6 +148,19 @@ def init_db():
 
 init_db()
 
+# ==========================================
+# FUNGSI UNTUK UPLOAD GAMBAR KE CLOUDINARY
+# ==========================================
+def upload_to_cloudinary(file):
+    if file is None:
+        return None
+    try:
+        response = cloudinary.uploader.upload(file)
+        return response.get("secure_url")
+    except Exception as e:
+        st.error(f"Gagal mengunggah gambar ke Cloudinary: {e}")
+        return None
+        
 # ==========================================
 # FUNGSI EXPORT EXCEL
 # ==========================================
