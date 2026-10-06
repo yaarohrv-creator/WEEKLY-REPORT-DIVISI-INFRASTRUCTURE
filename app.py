@@ -21,6 +21,19 @@ cloudinary.config(
     api_secret=st.secrets["cloudinary"]["api_secret"]
 )
 
+# ==========================================
+# FUNGSI UNTUK UPLOAD GAMBAR KE CLOUDINARY
+# ==========================================
+def upload_to_cloudinary(file):
+    if file is None:
+        return None
+    try:
+        response = cloudinary.uploader.upload(file)
+        return response.get("secure_url")
+    except Exception as e:
+        st.error(f"Gagal mengunggah gambar ke Cloudinary: {e}")
+        return None
+        
 # --- LIBRARY UNTUK MEMPROSES GAMBAR ---
 try:
     from PIL import Image as PILImage
