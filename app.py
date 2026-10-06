@@ -662,7 +662,7 @@ elif menu == MENU_INPUT:
 
     tab_input_bangka, tab_input_belitung, tab_input_semua = st.tabs([
         "🏝 Wilayah Bangka", 
-        "🏖️ Wilayah Belitung", 
+        "🏖️️ Wilayah Belitung", 
         "📋 Semua Wilayah"
     ])
 
@@ -747,11 +747,21 @@ elif menu == MENU_INPUT:
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
 
-                        # 1. Simpan ke tabel laporan_mingguan
+                        # 1. Simpan ke tabel laporan_mingguan (Urutan Kolom Mengikuti Struktur Asli)
                         cursor.execute("""
                             INSERT INTO laporan_mingguan (
-                                no_spk, jenis_pekerjaan, kontraktor, unit, jumlah, nilai_pekerjaan,
-                                progress_minggu_lalu, progress_minggu_ini, catatan, foto_1, foto_2, tanggal
+                                no_spk, 
+                                jenis_pekerjaan, 
+                                kontraktor, 
+                                unit, 
+                                jumlah, 
+                                nilai_pekerjaan,
+                                progress_minggu_lalu, 
+                                progress_minggu_ini, 
+                                catatan, 
+                                foto_1, 
+                                foto_2, 
+                                tanggal
                             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """, (
                             selected_spk_no,
@@ -768,12 +778,20 @@ elif menu == MENU_INPUT:
                             tgl_str
                         ))
 
-                        # 2. Simpan ke tabel history_progress (Log Audit/Riwayat)
+                        # 2. Simpan ke tabel history_progress (Urutan Kolom Mengikuti Struktur Asli)
                         cursor.execute("""
                             INSERT INTO history_progress (
-                                no_spk, jenis_pekerjaan, kontraktor, unit,
-                                progress_minggu_lalu, progress_minggu_ini, progres_penambahan,
-                                catatan, foto_1, foto_2, tanggal
+                                no_spk, 
+                                jenis_pekerjaan, 
+                                kontraktor, 
+                                unit,
+                                progress_minggu_lalu, 
+                                progress_minggu_ini, 
+                                progres_penambahan,
+                                catatan, 
+                                foto_1, 
+                                foto_2, 
+                                tanggal
                             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """, (
                             selected_spk_no,
@@ -795,7 +813,7 @@ elif menu == MENU_INPUT:
                     st.rerun()
 
                 except Exception as e:
-                    st.error(f"⚠️ Gagal menyimpan laporan progress: {e}")
+                    st.error(f"⚠️️ Gagal menyimpan laporan progress: {e}")
 
     # Render form sesuai filter wilayah
     with tab_input_bangka:
