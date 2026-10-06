@@ -33,6 +33,20 @@ def upload_to_cloudinary(file):
     except Exception as e:
         st.error(f"Gagal mengunggah gambar ke Cloudinary: {e}")
         return None
+
+# ==========================================
+# FUNGSI VALIDASI URL GAMBAR (TAMBAHKAN DI SINI)
+# ==========================================
+def is_valid_image_url(url):
+    """Fungsi pembantu untuk memastikan URL foto valid dan bukan NaN/None/kosong"""
+    if url is None:
+        return False
+    if pd.isna(url):  # Memeriksa apakah nilai bernilai NaN (float)
+        return False
+    url_str = str(url).strip()
+    if url_str in ["", "None", "nan", "NaN"]:
+        return False
+    return url_str.startswith("http://") or url_str.startswith("https://") or os.path.exists(url_str)
         
 # --- LIBRARY UNTUK MEMPROSES GAMBAR ---
 try:
@@ -740,15 +754,22 @@ elif menu == MENU_INPUT:
                 existing_foto_1 = existing_prog_df.iloc[0]['foto_1']
                 existing_foto_2 = existing_prog_df.iloc[0]['foto_2']
 
-        if existing_foto_1 or existing_foto_2:
-            st.markdown("**📸 Pratinjau Foto Dokumentasi Terakhir:**")
-            c_img1, c_img2 = st.columns(2)
-            with c_img1:
-                if existing_foto_1:
-                    st.image(existing_foto_1, caption="Foto Dokumentasi 1 (Minggu Lalu)", use_container_width=True)
-            with c_img2:
-                if existing_foto_2:
-                    st.image(existing_foto_2, caption="Foto Dokumentasi 2 (Minggu Lalu)", use_container_width=True)
+        # Tampilkan pratinjau jika minimal salah satu foto valid
+if is_valid_image_url(existing_foto_1) or is_valid_image_url(existing_foto_2):
+    st.markdown("**📷 Pratinjau Foto Dokumentasi Terakhir:**")
+    c_img1, c_img2 = st.columns(2)
+    
+    with c_img1:
+        if is_valid_image_url(existing_foto_1):
+            st.image(str(existing_foto_1), caption="Foto Dokumentasi 1 (Minggu Lalu)", use_container_width=True)
+        else:
+            st.info("📷 Foto Dokumentasi 1 belum tersedia.")
+            
+    with c_img2:
+        if is_valid_image_url(existing_foto_2):
+            st.image(str(existing_foto_2), caption="Foto Dokumentasi 2 (Minggu Lalu)", use_container_width=True)
+        else:
+            st.info("📷 Foto Dokumentasi 2 belum tersedia.")
 
         with st.form(f"form_input_week_{tab_key_prefix}", clear_on_submit=False):
             tgl_laporan = st.date_input(
